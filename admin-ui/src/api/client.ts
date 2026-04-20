@@ -184,6 +184,24 @@ export interface SearchHit {
   is_error: boolean
 }
 
+export interface ErrorRow {
+  request_id: string
+  created_at: string
+  provider: string
+  model: string
+  user_id?: string
+  upstream_status: number
+  error_type: string
+  error_message: string
+  duration_ms: number
+  request_text_preview: string
+}
+
+export interface ErrorListResponse {
+  items: ErrorRow[]
+  total: number
+}
+
 // ============ 端点 ============
 
 export interface ListTracesParams {
@@ -241,6 +259,21 @@ export const api = {
       if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
     })
     return request(`/api/v1/search?${q.toString()}`)
+  },
+
+  async errors(params: {
+    provider?: string
+    upstream_status?: number
+    start?: string
+    end?: string
+    limit?: number
+    offset?: number
+  } = {}): Promise<ErrorListResponse> {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
+    })
+    return request<ErrorListResponse>(`/api/v1/errors?${q.toString()}`)
   },
 
   async ping(): Promise<{ status: string; clickhouse?: boolean }> {
