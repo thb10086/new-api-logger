@@ -80,32 +80,39 @@ llm-logger/
 
 ```bash
 # 全新 Linux VPS (Ubuntu/Debian/CentOS):
-curl -fsSL https://raw.githubusercontent.com/<your-org>/llm-logger/main/deploy/scripts/server-install.sh \
+curl -fsSL https://raw.githubusercontent.com/thb10086/new-api-logger/main/deploy/scripts/server-install.sh \
   | sudo bash
 ```
 
-脚本会自动装 Docker → clone 仓库 → 生成随机密码 `.env` → 构建镜像 → 启动全栈 → 初始化 schema → 打印面板地址.
+脚本会自动装 Docker → clone 仓库 → 生成随机密码 `.env` → 构建镜像 → 启动全栈 → 打印面板地址。**ClickHouse schema 与 MinIO bucket 由 Compose 自动初始化**，无需手动执行任何 migration 命令。
 
 ### 方式 2 - 本地一键容器 (开发)
 
 ```bash
-git clone <repo> llm-logger && cd llm-logger
+git clone https://github.com/thb10086/new-api-logger.git llm-logger && cd llm-logger
 cp .env.example .env
-make deploy          # build + up + migrate + init-minio 一条龙
+docker compose up -d            # 构建 + 启动 + 自动初始化 schema 和 bucket
+docker compose ps               # 看 6 个服务状态 (minio-init 为 Exited是正常的)
 ```
 
 启动完成后:
 
-- **Admin UI (面板)**: <http://localhost:8888> — 用 `.env` 里的 `LLMLOG_API_TOKEN` 登录
-- **Gateway (代理)**: <http://localhost:8080> — 把 newapi 客户端的 `base_url` 改为这里
-- **MinIO Console**: <http://localhost:9001> — minioadmin/minioadmin
+- **Admin UI (面板)**: <http://localhost:28888> — 用 `.env` 里的 `LLMLOG_API_TOKEN` 登录
+- **Gateway (代理)**: <http://localhost:28080> — 把 newapi 客户端的 `base_url` 改为这里
+- **MinIO Console**: <http://localhost:29001> — `.env` 里的 `LLMLOG_S3_ACCESS_KEY` / `LLMLOG_S3_SECRET_KEY`
+
+查看自动初始化日志:
+
+```bash
+docker compose logs clickhouse | grep -i initdb   # Schema 自动应用
+docker compose logs minio-init                    # Bucket 自动创建
+```
 
 ### 方式 3 - 本地热重载 (改代码)
 
 ```bash
 cp .env.example .env
-make up-deps          # 只启动 CH + MinIO
-make migrate && make init-minio
+docker compose up -d clickhouse minio minio-init   # 基础设施 + 自动初始化
 
 # 开 3 个终端
 make gateway-run      # Go 后端
@@ -117,17 +124,17 @@ make admin-ui-dev     # Vite HMR
 
 ```bash
 # 1. 发一条测试请求穿过 Gateway
-curl -N http://localhost:8080/v1/chat/completions \
+curl -N http://localhost:28080/v1/chat/completions \
   -H "Authorization: Bearer sk-test" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 
 # 2. 浏览器打开面板查看 trace
-#    http://localhost:8888
+#    http://localhost:28888
 
 # 3. 或直接 curl Query API
 TOKEN=$(grep LLMLOG_API_TOKEN .env | cut -d= -f2)
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/traces?limit=10
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:28000/api/v1/traces?limit=10"
 ```
 
 ## 核心特性
@@ -173,13 +180,27 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/traces?limit
 ## 常用命令
 
 ```bash
+docker compose up -d                           # 启动全栈 (开发)
+docker compose -f docker-compose.yml \
+  -f docker-compose.prod.yml up -d             # 启动全栈 (生产)
+docker compose ps                              # 服务状态
+docker compose logs -f gateway                 # 尾随某服务日志
+docker compose logs clickhouse | grep initdb   # 查 schema 初始化输出
+docker compose logs minio-init                 # 查 bucket 创建输出
+docker compose restart gateway                 # 重启某服务
+docker compose down                            # 停止并移除容器
+docker compose down -v                         # 删容器 + 删数据卷 (危险)
+```
+
+或用 Makefile 封装:
+
+```bash
 make help            # 看所有命令
-make deploy          # 一键全栈部署 (开发 / 快速测试)
-make deploy-prod     # 生产部署 (使用 docker-compose.prod.yml)
+make deploy          # docker compose up -d
+make deploy-prod     # docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 make status          # 服务状态
-make logs            # 日志
+make logs            # 聚合日志
 make stop/restart    # 停止/重启
-make clean-data      # 清空所有数据卷 (危险)
 ```
 
 ## License

@@ -1,475 +1,477 @@
-# 部署指南
+# LLM Logger 部署指南
 
-本文档描述 LLM Logger 在**本地开发**和**生产服务器**两种场景下的部署方式.
+本文档覆盖从零到生产上线的完整部署流程,默认全栈基于 Docker Compose,schema 与 bucket 由 Compose 自动初始化。
 
 ---
 
-## 0. 一键部署 (推荐)
+## 1. 前置依赖
 
-已有 Linux 服务器 (Ubuntu 20+/Debian 11+/CentOS 8+) 直接一键跑:
+| 依赖 | 最低版本 | 说明 |
+| --- | --- | --- |
+| Docker Engine | 24.0+ | 需支持 BuildKit 与 Compose v2 |
+| Docker Compose | v2.20+ | 使用 `ports: !override` 语法需要 v2.20+ |
+| 服务器资源 | 2 CPU / 4 GB RAM / 40 GB 硬盘 | 最小规格,生产推荐 4C/8G 及以上 |
+| 网络 | 能出站访问镜像仓库 + newapi | 可用国内镜像源加速 |
+| 操作系统 | Linux (任意发行版) | 推荐 Debian 12 / Ubuntu 22.04 / OpenCloudOS 9 |
+
+---
+
+## 2. 快速部署
+
+### 2.1 服务器一键安装
 
 ```bash
-# SSH 到服务器后
-curl -fsSL https://raw.githubusercontent.com/<your-org>/llm-logger/main/deploy/scripts/server-install.sh \
+curl -fsSL https://raw.githubusercontent.com/thb10086/new-api-logger/main/deploy/scripts/server-install.sh \
   | sudo bash
 ```
 
-脚本会自动:
+脚本行为:
 
-1. 安装 Docker + Compose plugin
+1. 检测并安装 Docker / Docker Compose
 2. Clone 仓库到 `/opt/llm-logger`
-3. 生成随机密码的 `.env`
-4. 构建并启动全部 5 个服务
-5. 应用 CH schema + 创建 MinIO buckets
-6. 打印 Admin UI 地址 + 登录 Token
+3. 从 `.env.prod.example` 生成 `.env`,用 `openssl rand` 随机填充所有密码
+4. `docker compose build`
+5. `docker compose up -d`(自动初始化 ClickHouse schema + MinIO bucket)
+6. 打印面板地址、代理地址、登录 Token
 
-**或本地已 clone**:
-
-```bash
-cd llm-logger
-sudo bash deploy/scripts/server-install.sh
-```
-
----
-
-## 1. 本地开发
-
-### 1.1 前置依赖
-
-- **Docker 23+** (含 docker compose plugin)
-- **Go 1.22+** (仅本地 `go run` 模式需要)
-- **Python 3.11+** (建议用 `uv`,仅本地 `uv run` 模式需要)
-- **Node 20+** (仅前端开发需要)
-- **GNU make** (Windows 推荐 git bash / WSL)
-
-### 1.2 方式 A - 全栈容器 (最省事)
+### 2.2 手动 Docker Compose 部署
 
 ```bash
-cp .env.example .env
-make deploy          # 一键: build + up + migrate + init-minio
-```
-
-完成后访问:
-
-- Admin UI: <http://localhost:8888>
-- Gateway: <http://localhost:8080>
-- MinIO Console: <http://localhost:9001> (minioadmin/minioadmin)
-
-### 1.3 方式 B - 基础设施 + 本地热重载
-
-适合改 Gateway / Query API / Admin UI 源码时快速迭代:
-
-```bash
-cp .env.example .env
-make up-deps                  # 只起 CH + MinIO
-make migrate && make init-minio
-
-# 开 3 个终端
-make gateway-run              # Go: 改完 Ctrl+C 重启
-make query-api-install        # 首次
-make query-api-run            # Python: --reload 热加载
-make admin-ui-install         # 首次
-make admin-ui-dev             # Vite: HMR 实时
-```
-
-### 1.4 验证链路
-
-```bash
-# 1. 发一条测试请求穿过 Gateway (若 newapi 未起会 502, Gateway 仍会采集错误 trace)
-curl -N http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-test" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
-
-# 2. 浏览器打开 http://localhost:8888 输入 .env 中的 LLMLOG_API_TOKEN 登录
-#    应看到刚才的 trace
-
-# 3. 或直接 curl Query API (需与 admin-ui 同 token)
-curl -H "Authorization: Bearer $(grep LLMLOG_API_TOKEN .env | cut -d= -f2)" \
-  http://localhost:8000/api/v1/traces?limit=5 | jq
-```
-
-### 1.5 常用调试命令
-
-```bash
-make status          # docker compose ps
-make logs            # 全部服务日志
-make logs-gateway    # 只看 gateway
-make ch-shell        # 进 ClickHouse SQL 交互
-# SQL: SELECT count(), max(created_at) FROM llm_call_logs;
-
-curl http://localhost:9090/metrics          # Gateway Prometheus 指标
-go tool pprof http://localhost:9090/debug/pprof/profile  # pprof CPU
-```
-
----
-
-## 2. 生产部署
-
-### 2.1 部署拓扑 (单节点快速版)
-
-```text
-                  [公网]
-                     │ HTTPS (443)
-                     ▼
-              ┌───────────────┐
-              │  Caddy/Nginx  │   TLS 终止 + 域名分发
-              └───┬───────┬───┘
-                  │       │
-      admin.xx.com│       │api.xx.com (gateway)
-                  ▼       ▼
-         ┌──────────┐  ┌──────────┐
-         │ admin-ui │  │ gateway  │
-         │ :8888    │  │ :8080    │
-         └──────┬───┘  └────┬─────┘
-                │           │ 反代到 newapi
-                │           ▼
-         ┌──────┴───┐  ┌──────────┐
-         │query-api │  │  newapi  │
-         │ :8000    │  │ :3000    │
-         └──────┬───┘  └──────────┘
-                │
-                ▼
-        ┌────────────────┐
-        │ clickhouse     │  (127.0.0.1 only)
-        │ + minio/COS    │
-        └────────────────┘
-```
-
-### 2.2 生产启动
-
-```bash
+# 1. Clone
+git clone https://github.com/thb10086/new-api-logger.git /opt/llm-logger
 cd /opt/llm-logger
+
+# 2. 生成生产 .env
 cp .env.prod.example .env
-# 必改: LLMLOG_UPSTREAM_URL / 所有 CHANGE_ME 密码字段
-# 推荐: openssl rand -hex 32 生成随机值
-vim .env
+sed -i "s|CHANGE_ME_openssl_rand_hex_32|$(openssl rand -hex 32)|g" .env
+sed -i "s|CHANGE_ME_minio_access_key|$(openssl rand -hex 16)|" .env
+sed -i "s|CHANGE_ME_minio_secret_key_at_least_40_chars|$(openssl rand -hex 32)|" .env
+sed -i "s|^LLMLOG_API_TOKEN=.*|LLMLOG_API_TOKEN=$(openssl rand -hex 32)|" .env
+chmod 600 .env
 
-make deploy-prod     # 使用 docker-compose.prod.yml override
-# 等效: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# 3. 配置 newapi 上游 (见 §3.3 三种模式)
+sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000|" .env
+
+# 4. 加载 .env 到 shell (compose v2.24+ 推荐)
+set -a; source .env; set +a
+
+# 5. 构建并启动全栈
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# 6. 确认 6 个服务状态
+docker compose ps
 ```
 
-`docker-compose.prod.yml` 相较默认的变化:
+**预期结果**:
 
-- ClickHouse / MinIO / Query API 全部绑 127.0.0.1,**不对公网暴露**
-- 容器加资源上限 + 日志滚动 (50MB x 5)
-- Gateway 默认并发调到 16 workers / batch 500
-- 强制 `restart: unless-stopped`
+| 容器 | 状态 |
+| --- | --- |
+| `llmlog-clickhouse` | Up (healthy) |
+| `llmlog-minio` | Up (healthy) |
+| `llmlog-minio-init` | Exited (0) |
+| `llmlog-gateway` | Up |
+| `llmlog-query-api` | Up |
+| `llmlog-admin-ui` | Up |
 
-### 2.3 newapi 上游连接的 3 种模式
+`minio-init` 是**一次性初始化容器**,执行完 bucket 创建后退出是正常的。
 
-Gateway 在 docker-compose 中需要能访问 newapi. 根据 newapi 部署形态选其一:
+---
 
-#### 模式 1 — newapi 独立容器 + 宿主机端口映射 (默认, 最简单)
+## 3. 配置说明
 
-newapi 的 compose 已有:
+### 3.1 环境变量
 
-```yaml
-services:
-  newapi:
-    ports:
-      - "3000:3000"
+所有配置都集中在 `.env`,推荐从 `.env.prod.example` 复制修改。核心字段:
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `LLMLOG_UPSTREAM_URL` | `http://host.docker.internal:3000` | newapi 上游地址,见 §3.3 |
+| `LLMLOG_UPSTREAM_TIMEOUT` | `600s` | 上游请求超时 |
+| `LLMLOG_CH_DATABASE` | `llm_logger` | ClickHouse 数据库名 |
+| `LLMLOG_CH_USER` | `default` | ClickHouse 用户 |
+| `LLMLOG_CH_PASSWORD` | (必填) | ClickHouse 密码 |
+| `LLMLOG_S3_BUCKET` | `llm-logs` | 对象存储 bucket 名 |
+| `LLMLOG_S3_ACCESS_KEY` | (必填) | S3 access key |
+| `LLMLOG_S3_SECRET_KEY` | (必填) | S3 secret key |
+| `LLMLOG_API_TOKEN` | (必填) | Admin UI 登录 Token |
+| `LLMLOG_API_CORS_ORIGINS` | `*` | 生产应限定为实际面板域名 |
+| `LLMLOG_CAPTURE_WORKERS` | `16` | 采集并发 worker 数 |
+| `LLMLOG_CH_BATCH_SIZE` | `500` | ClickHouse 批量写入条数 |
+| `LLMLOG_CH_BATCH_INTERVAL` | `300ms` | ClickHouse 批量写入最大延迟 |
+
+### 3.2 端口配置
+
+生产默认使用 **28xxx / 29xxx 段**,避开常见服务端口:
+
+| 变量 | 默认 | 暴露 | 说明 |
+| --- | --- | --- | --- |
+| `GATEWAY_PORT` | `28080` | 公网 | LLM 代理入口,客户端 `base_url` 指向此 |
+| `ADMIN_UI_PORT` | `28888` | 公网 | 管理面板 |
+| `CH_HTTP_PORT` | `28123` | `127.0.0.1` | ClickHouse HTTP |
+| `CH_TCP_PORT` | `29000` | `127.0.0.1` | ClickHouse Native TCP |
+| `MINIO_API_PORT` | `29100` | `127.0.0.1` | MinIO S3 API |
+| `MINIO_CONSOLE_PORT` | `29001` | `127.0.0.1` | MinIO Web Console |
+| `QUERY_API_PORT` | `28000` | 不暴露 | 由 admin-ui 内 nginx 反代 |
+| `GATEWAY_METRICS_PORT` | `29090` | `127.0.0.1` | Prometheus 抓取指标 |
+
+修改端口只需改 `.env`,compose 会自动读取。`prod.yml` 将非对外端口绑定到 `127.0.0.1`,只有 `GATEWAY_PORT` 和 `ADMIN_UI_PORT` 开放到 `0.0.0.0`。
+
+### 3.3 newapi 上游连接三种模式
+
+**模式 A — 走宿主机(默认推荐)**:
+
 ```
-
-**llm-logger `.env` 配置**:
-
-```bash
 LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000
 ```
 
-`extra_hosts: host.docker.internal:host-gateway` 已在 `docker-compose.yml` 配好,Linux 也能用.
+- 无需改动 newapi 容器
+- 依赖 compose.yml 已配置的 `extra_hosts: host.docker.internal:host-gateway`,Linux 下也可用
+- 流量多一跳,单请求开销 < 1 ms,可忽略
 
-#### 模式 2 — newapi 与 llm-logger 共享 Docker network (推荐,更安全)
+**模式 B — 加入 newapi 的 docker 网络**:
 
-**优势**: 流量不出宿主机,newapi 不用暴露 3000 端口到公网.
-
-**操作**:
-
-1. 查 newapi 的 network 名:`docker network ls | grep newapi`
-2. 修改 `docker-compose.yml` 给 gateway 加上 newapi 的外部 network:
-
-    ```yaml
-    services:
-      gateway:
-        networks:
-          - llmlog
-          - newapi_default   # newapi 的 network 名
-    networks:
-      newapi_default:
-        external: true
-    ```
-
-3. `.env`:
-
-    ```bash
-    LLMLOG_UPSTREAM_URL=http://newapi:3000   # newapi 的 container name / hostname
-    ```
-
-#### 模式 3 — Gateway 共享宿主机网络 (极端场景)
-
-**适用**: newapi 跑在宿主机非 docker,或已有复杂 iptables 规则.
-
-**操作**: 取消注释 `docker-compose.yml` 中 gateway 的 `network_mode: host`,同时**注释掉该 service 的 `ports` 和 `networks` 段**(host 模式下互斥).
-
-```bash
-LLMLOG_UPSTREAM_URL=http://localhost:3000
-```
-
-### 2.4 暴露 Admin UI 面板
-
-默认面板监听 `http://<server-ip>:8888`.改端口:
-
-```bash
-# .env
-ADMIN_UI_PORT=80          # 直接 80 端口
-```
-
-**公网暴露建议**: 前置一层 Caddy 自动 HTTPS:
-
-```caddy
-# /etc/caddy/Caddyfile
-admin.yourdomain.com {
-    reverse_proxy localhost:8888
-}
-
-api.yourdomain.com {
-    reverse_proxy localhost:8080
-}
-```
-
-随后 LLM 客户端 `base_url` 填 `https://api.yourdomain.com/v1`,浏览器访问 `https://admin.yourdomain.com` 登录面板.
-
-### 2.5 防火墙白名单
-
-```bash
-# UFW 示例 (其他防火墙类似)
-ufw allow 22/tcp          # SSH
-ufw allow 443/tcp         # Caddy HTTPS
-ufw allow 80/tcp          # Caddy HTTP -> HTTPS 跳转
-# Gateway / Admin UI / CH / MinIO 均不对公网开放, 仅 Caddy 内部反代
-ufw enable
-```
-
-### 2.6 并发调优参数
-
-根据你的 VPS 规格调整 `.env`:
-
-| 参数 | 默认 | 中型 VPS (4C/8G) | 大型 VPS (16C/32G) | 说明 |
-|---|---|---|---|---|
-| `LLMLOG_CAPTURE_WORKERS` | 4 | 16 | 64 | 采集处理协程数 |
-| `LLMLOG_CAPTURE_BUFFER` | 10000 | 20000 | 100000 | 采集队列长度 |
-| `LLMLOG_CH_BATCH_SIZE` | 200 | 500 | 1000 | CH 批量写大小 |
-| `LLMLOG_CH_BATCH_INTERVAL` | 500ms | 300ms | 200ms | CH 批量写周期 |
-| `LLMLOG_COS_OFFLOAD_THRESHOLD` | 32768 | 32768 | 32768 | 超过此大小转 COS |
-| `CH_MEM_LIMIT` | 6g | 6g | 24g | (prod.yml) CH 内存 |
-
-**实测吞吐参考** (4 核 8G VPS, Gateway 单实例):
-
-- 非流式请求 (100ms): ~3000 QPS
-- SSE 流式 (5s, 20 chunks/s): ~500-1000 并发流
-- CH 写入: ~5000 records/s (async_insert)
-
-达到 **10k+ QPS** 需要 Gateway 水平扩容(见 §2.7).
-
-### 2.7 水平扩容 (高流量场景)
-
-Gateway 是**无状态**的,可直接水平扩展:
-
-1. 在多台 VPS / 多个容器各跑一个 Gateway,共享同一个 ClickHouse
-2. 前置 Nginx/HAProxy/Caddy 做 L7 负载均衡
-3. `LLMLOG_UPSTREAM_URL` 指向内网 newapi (或用 K8s Service hostname)
-
-**扩容要点**:
-
-- 客户端的 SSE 长连接有粘滞性,LB 用 least_conn 或 random 即可
-- ClickHouse 单机足以承载 10-30k writes/s,写入不会成瓶颈
-- 若 newapi 成为瓶颈,独立扩容 newapi 即可
-
-### 2.8 ClickHouse 进阶 (大规模)
-
-默认 docker-compose 的 CH 单节点在 **1C/2G ~ 8C/32G** 之间都能跑,日 1000 万请求无压力.
-若需要更高规模:
-
-**数据卷规划**:
-
-- 挂载独立 NVMe 做 `hot` 盘
-- 大容量 SSD 做 `warm` 盘
-- `deploy/clickhouse/config.d/storage.xml` 中的 `<cold>` disk 改为生产 S3:
-
-  ```xml
-  <cold>
-    <type>s3</type>
-    <endpoint>https://cos.ap-guangzhou.myqcloud.com/your-cold-bucket/</endpoint>
-    <access_key_id>AKIDxxxxx</access_key_id>
-    <secret_access_key>xxxxx</secret_access_key>
-  </cold>
-  ```
-
-**内存/IO 调优**:
-
-- `max_server_memory_usage` 默认即系统内存 90%
-- `background_pool_size` 推荐 16+
-- 日志级别 `<level>warning</level>` 降噪
-
-**集群 (亿级以上日请求)**:
-
-- 至少 3 节点 + 2 副本 (推荐 ClickHouse Keeper 替代 ZooKeeper)
-- 主表改用 `ReplicatedMergeTree`,上层加 `Distributed` 引擎
-- 分片键:`cityHash64(user_id)` 保证用户时间线在单分片内
-- 详见 [ClickHouse 集群部署官方文档](https://clickhouse.com/docs/en/architecture/cluster-deployment)
-
-### 2.9 对象存储选型
-
-默认用 MinIO 便于本地开发.生产推荐:
-
-- **腾讯云 COS** (国内业务,与 CVM 同 region 内网免流量费)
-- **AWS S3** (海外)
-- **Cloudflare R2** (零出网费,适合查询频繁场景)
-
-在 `.env` 里切换到 COS 只需改 4 个变量 (见 `.env.prod.example` 注释段).
-
-bucket 配置要点:
-
-- 开启版本控制 (防误删)
-- 配置生命周期规则:
-  - 0-90d: 标准存储
-  - 91-365d: 低频存储
-  - 365d 后: 删除
-- CORS 仅在 Admin UI 直接拉取 COS 时需要 (默认通过 Query API 代理,不需要)
-
-### 2.10 K8s 部署
-
-构建镜像:
-
-```bash
-make gateway-image
-docker tag prismai/llm-logger-gateway:latest your-registry/llm-logger-gateway:v0.1.0
-docker push your-registry/llm-logger-gateway:v0.1.0
-# query-api / admin-ui 同理
-```
-
-K8s Gateway Deployment 关键配置:
+在 `docker-compose.yml` 的 gateway 服务加:
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: llm-logger-gateway
-spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-        - name: gateway
-          image: your-registry/llm-logger-gateway:v0.1.0
-          ports:
-            - containerPort: 8080
-              name: http
-            - containerPort: 9090
-              name: metrics
-          env:
-            - name: LLMLOG_UPSTREAM_URL
-              value: http://newapi-svc:3000
-            - name: LLMLOG_CH_HOST
-              value: clickhouse-svc
-            # 其他环境变量从 Secret/ConfigMap 注入
-          resources:
-            requests:
-              cpu: 500m
-              memory: 256Mi
-            limits:
-              cpu: 2000m
-              memory: 1Gi
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 8080
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 8080
+networks:
+  - llmlog
+  - newapi_default
 ```
 
-Query API / Admin UI 部署要点:
-
-- Query API 副本数 1-2 即可 (查询负载轻)
-- 必须设置 `LLMLOG_API_TOKEN` (强随机字符串)
-- 建议内网域名,不直接对公网暴露 (或加 Cloudflare Access / OAuth2 代理)
-- Admin UI 通过 `LLMLOG_ADMIN_API_BASE` 环境变量指定 Query API 地址,支持同域/跨域
-
-### 2.11 监控告警
-
-#### Prometheus 指标
-
-Gateway 暴露 `/metrics` (默认 :9090), 包括:
-
-- Go runtime 指标 (cpu / mem / goroutine / GC)
-- (TODO) 业务指标: `llmlog_requests_total{provider,status}`, `llmlog_capture_dropped_total`
-
-#### 关键告警规则建议
+并在文件末尾声明外部网络:
 
 ```yaml
-groups:
-  - name: llm-logger
-    rules:
-      - alert: CaptureQueueAlmostFull
-        expr: llmlog_capture_queue_length / llmlog_capture_queue_cap > 0.8
-        for: 5m
-      - alert: CHSinkFailedHigh
-        expr: rate(llmlog_ch_failed_records_total[5m]) > 100
-        for: 5m
-      - alert: GatewayP99LatencyHigh
-        expr: histogram_quantile(0.99, llmlog_proxy_overhead_ms) > 10
-        for: 10m
+networks:
+  newapi_default:
+    external: true
+```
+
+`.env` 改:
+
+```
+LLMLOG_UPSTREAM_URL=http://new-api:3000
+```
+
+此时 newapi 可以关闭宿主 3000 端口映射,只对内暴露,安全性更高。
+
+**模式 C — gateway 共享宿主机网络**:
+
+```yaml
+gateway:
+  network_mode: host
+```
+
+注释掉 ports 与 networks 段。适合 gateway 需要极低延迟或需要绑定特定接口的场景。
+
+---
+
+## 4. 自动初始化机制
+
+Compose 启动时自动完成 schema 与 bucket 初始化,无需手动跑 migration。
+
+### 4.1 ClickHouse Schema
+
+`docker-compose.yml` 把 `./migrations/clickhouse/` 挂载为 ClickHouse 容器的 `/docker-entrypoint-initdb.d`。ClickHouse 官方镜像在**数据目录为空**时会按字典序执行该目录下的所有 `.sql`。
+
+当前 migration 文件:
+
+```
+migrations/clickhouse/
+├── 001_init.sql                   # 建库 + schema_versions 记录表
+├── 002_main_table.sql             # 主表 llm_calls (冷热分层, TTL)
+├── 003_materialized_views.sql     # 按小时 × 模型 × 用户预聚合视图
+└── 004_helper_views.sql           # 运维辅助视图
+```
+
+**只在首次启动生效**。数据卷 `clickhouse_data` 已存在时不重复执行,避免误删。
+
+### 4.2 MinIO Bucket
+
+`docker-compose.yml` 定义了独立的 `minio-init` 服务,使用官方 `minio/mc` 镜像:
+
+- 等 `minio` 健康
+- `mc alias set` 连接
+- `mc mb --ignore-existing` 创建 `llm-logs` 和 `clickhouse-cold` 两个 bucket
+- 打印日志后自动退出
+
+`gateway` 和 `query-api` 的 `depends_on` 声明了 `minio-init: service_completed_successfully`,保证 bucket 就绪后才启动业务服务,避免首个请求写失败。
+
+### 4.3 查看初始化日志
+
+```bash
+# Schema 应用记录
+docker compose logs clickhouse | grep -i "docker-entrypoint-initdb\|Running"
+
+# Bucket 创建记录
+docker compose logs minio-init
+
+# 预期输出示例
+# >> [minio-init] connecting to http://minio:9000
+# >> [minio-init] creating bucket: llm-logs
+# >> [minio-init] creating bucket: clickhouse-cold
+# >> [minio-init] buckets ready, exiting.
 ```
 
 ---
 
-## 3. 客户端接入
+## 5. 运维操作
 
-把 newapi 的 base URL 改为 Gateway 地址即可, 鉴权 header 原样传递:
+### 5.1 启动 / 停止 / 重启
 
-```python
-# 之前
-client = OpenAI(api_key="sk-xxx", base_url="https://your-newapi.com/v1")
+```bash
+# 加载环境变量 (生产强烈推荐)
+set -a; source .env; set +a
 
-# 之后
-client = OpenAI(api_key="sk-xxx", base_url="https://llm-logger.yourcompany.com/v1")
+# 启动 / 重建
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# 停止
+docker compose -f docker-compose.yml -f docker-compose.prod.yml stop
+
+# 停止 + 删容器 (保留卷)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+# 停止 + 删容器 + 删数据卷 (危险)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+
+# 重启单个服务
+docker compose restart gateway
 ```
 
-Gateway 会:
+### 5.2 日志查看
 
-- 透明转发到内部 newapi
-- 每次请求注入响应 header `X-LLM-Logger-Request-Id`, 客户端可记录关联
+```bash
+# 聚合日志
+docker compose logs -f
+
+# 单服务
+docker compose logs -f gateway
+docker compose logs --tail=200 clickhouse
+docker compose logs minio-init
+
+# 按时间过滤
+docker compose logs --since 10m gateway
+```
+
+### 5.3 备份 / 恢复
+
+**ClickHouse**:
+
+```bash
+# 备份
+docker compose exec -T clickhouse clickhouse-client --query \
+  "BACKUP DATABASE llm_logger TO Disk('backups', 'llm_logger.zip')"
+
+# 或直接快照数据卷
+docker run --rm -v new-api-logger_clickhouse_data:/src -v "$(pwd)/backups:/dst" \
+  alpine tar czf /dst/ch-$(date +%F).tar.gz -C /src .
+```
+
+**MinIO**:
+
+```bash
+# 从容器内 mc 同步到宿主机
+docker compose exec -T minio sh -c "
+  mc alias set local http://localhost:9000 \$MINIO_ROOT_USER \$MINIO_ROOT_PASSWORD &&
+  mc mirror --overwrite local/llm-logs /data/backup
+"
+```
 
 ---
 
-## 4. 数据迁移与回填
+## 6. 生产最佳实践
 
-### 历史 trace 回填
+### 6.1 HTTPS / 反向代理
 
-如有历史日志需导入, 可:
+Admin UI 与 Gateway 端口建议挂在 Nginx / Caddy 后,配置 TLS。示例 Nginx:
 
-1. 写脚本读取历史日志 → 构造 `Record` JSON → POST 到 CH `INSERT INTO llm_call_logs FORMAT JSONEachRow`
-2. 或用 `clickhouse-client --input-format=JSONEachRow ...`
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name admin.yourdomain.com;
 
-### Schema 升级
+    ssl_certificate     /etc/ssl/admin.crt;
+    ssl_certificate_key /etc/ssl/admin.key;
 
-- 所有 migration 在 `migrations/clickhouse/` 中按版本号编号
-- 在 `schema_versions` 表中记录已应用版本
-- 升级流程:
-  1. `make ch-shell` 检查当前 `MAX(version) FROM schema_versions`
-  2. 应用更高版本号的 SQL
-  3. 在线 DDL: `ALTER TABLE ... ADD COLUMN ...` 不影响读写
+    location / {
+        proxy_pass http://127.0.0.1:28888;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name llm.yourdomain.com;
+
+    ssl_certificate     /etc/ssl/llm.crt;
+    ssl_certificate_key /etc/ssl/llm.key;
+
+    # Gateway 需要支持 SSE 长连接
+    location / {
+        proxy_pass http://127.0.0.1:28080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_buffering off;            # 关闭 buffer, SSE 首字节低延迟
+        proxy_read_timeout 600s;        # 允许长流
+        proxy_send_timeout 600s;
+        chunked_transfer_encoding on;
+    }
+}
+```
+
+挂上 Nginx 后,记得把 `LLMLOG_API_CORS_ORIGINS` 改为 `https://admin.yourdomain.com`。
+
+### 6.2 资源限制调优
+
+`docker-compose.prod.yml` 默认值适配 **2C / 4G** 的 VPS。大机器请在 `.env` 覆盖:
+
+| 机器规格 | `CH_CPU_LIMIT` | `CH_MEM_LIMIT` | `GATEWAY_CPU_LIMIT` | `GATEWAY_MEM_LIMIT` |
+| --- | --- | --- | --- | --- |
+| 2C / 4G | 1.5 | 2g | 0.8 | 512m |
+| 4C / 8G | 2.5 | 4g | 1.5 | 1g |
+| 8C / 16G | 4 | 8g | 2 | 2g |
+| 16C / 32G+ | 8 | 16g | 4 | 4g |
+
+**注意**: `cpus` 值必须**严格小于**主机物理核数,不能等于。否则 Docker 会报 `Range of CPUs is from 0.01 to N.00`。
+
+### 6.3 防火墙
+
+只放行对外端口:
+
+```bash
+# ufw
+ufw allow 28080/tcp
+ufw allow 28888/tcp
+
+# firewalld
+firewall-cmd --permanent --add-port=28080/tcp
+firewall-cmd --permanent --add-port=28888/tcp
+firewall-cmd --reload
+```
+
+挂了 Nginx + TLS 后,可以只放 443,关闭 28xxx 的公网访问。
+
+### 6.4 对象存储切换到腾讯 COS / AWS S3
+
+生产强烈推荐用云厂商的对象存储替代本地 MinIO。修改 `.env`:
+
+```bash
+# 腾讯云 COS 示例
+LLMLOG_S3_ENDPOINT=https://cos.ap-guangzhou.myqcloud.com
+LLMLOG_S3_REGION=ap-guangzhou
+LLMLOG_S3_BUCKET=llm-logs-1234567890
+LLMLOG_S3_ACCESS_KEY=AKIDxxxxxxxxxxxx
+LLMLOG_S3_SECRET_KEY=xxxxxxxxxxxxxx
+LLMLOG_S3_USE_PATH_STYLE=false
+```
+
+然后注释 `docker-compose.yml` 里的 `minio` 和 `minio-init` 服务。记得 `gateway` / `query-api` 的 `depends_on` 里也移除对 minio 的依赖。
 
 ---
 
-## 5. 故障排查
+## 7. 常见问题
 
-| 现象 | 可能原因 | 排查命令 |
-|------|---------|---------|
-| `ready` 返回 503 | 队列接近满 | `curl :9090/metrics \| grep capture_queue` |
-| CH 没数据 | sink 写入失败 | 看 Gateway 日志 `CH 批量写入最终失败` |
-| COS 上传失败 | 凭证/权限/网络 | Gateway 日志 `COS 上传失败`, 检查 IAM |
-| SSE 客户端卡住 | flusher 没生效 | 确保上游 Content-Type 含 `text/event-stream` |
-| 内存 OOM | body 过大 | 调小 `LLMLOG_MAX_BODY_BYTES` |
+### 7.1 `docker compose up` 报端口占用但 `ss -tlnp` 查不到
+
+**根因**: 主 `docker-compose.yml` 的 `ports` 与 `docker-compose.prod.yml` 的 `ports` 被 compose v2 **追加合并**,导致同端口被 bind 两次。
+
+**解法**: `docker-compose.prod.yml` 的 `ports` 已加 `!override` 标签强制替换,升级到 compose v2.20+ 即可生效。
+
+### 7.2 `.env` 变量没被 compose 读取
+
+**根因**: compose v2.24+ 在某些边界情况下不会把 `.env` 用作 YAML 插值。
+
+**解法**: 启动前 `source .env` 到 shell,优先级最高:
+
+```bash
+set -a
+source .env
+set +a
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+或封装为 `up.sh`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")"
+set -a
+source .env
+set +a
+docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
+```
+
+### 7.3 ClickHouse schema 没自动应用
+
+**根因**: `docker-entrypoint-initdb.d` 只在 ClickHouse **数据目录为空**时执行。如果之前启动过并留下卷,不会重复跑。
+
+**解法** (仅开发 / 初次部署出问题时):
+
+```bash
+docker compose down -v        # 清数据卷
+docker compose up -d          # 重新起, 会重新应用 schema
+```
+
+生产环境如需增量 migration,手动执行:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client --multiquery \
+  < migrations/clickhouse/005_your_new_migration.sql
+```
+
+### 7.4 Gateway 连不到 newapi
+
+**检查点**:
+
+```bash
+# 1. 从 gateway 容器内测试
+docker compose exec gateway wget -O- -T 3 "$LLMLOG_UPSTREAM_URL/health" 2>&1 | head
+
+# 2. 看实际用的 URL
+docker compose logs gateway | grep -i upstream
+
+# 3. 模式 A 时确认 host.docker.internal 解析正常
+docker compose exec gateway getent hosts host.docker.internal
+```
+
+对应方案见 §3.3。
+
+### 7.5 Admin UI 登录后 API 报 401 / CORS
+
+- **401**: `.env` 里的 `LLMLOG_API_TOKEN` 与前端输入的不一致
+- **CORS**: `LLMLOG_API_CORS_ORIGINS` 没包含实际访问的域名
+- **改后需重启 query-api**:`docker compose restart query-api`
+
+---
+
+## 8. Kubernetes 部署
+
+仓库中提供的是 Compose 部署。如需 K8s,建议:
+
+- `gateway` → Deployment + Service + HPA(按 CPU 自动扩容)
+- `query-api` → Deployment + Service
+- `admin-ui` → Deployment + Service + Ingress
+- `clickhouse` → 用官方 `clickhouse-operator`(生产推荐)
+- `minio` → 改用托管对象存储
+
+核心配置保持 `.env` 里的变量不变,放进 ConfigMap + Secret 即可。Helm Chart 在路线图中。
+
+---
+
+## 9. 卸载
+
+```bash
+cd /opt/llm-logger
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
+docker image rm prismai/llm-logger-gateway:latest prismai/llm-logger-query-api:latest prismai/llm-logger-admin-ui:latest
+cd .. && rm -rf /opt/llm-logger
+```
+
+数据卷 `down -v` 已删除。如果有备份需求,先 §5.3 备份。

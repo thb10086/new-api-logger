@@ -38,6 +38,9 @@ services:
       - clickhouse_logs:/var/log/clickhouse-server
       - ./deploy/clickhouse/config.d:/etc/clickhouse-server/config.d
       - ./deploy/clickhouse/users.d:/etc/clickhouse-server/users.d
+      # Schema 自动初始化: 首次启动时 CH 按字典序执行 /docker-entrypoint-initdb.d/*.sql
+      # 日志查看: docker compose logs clickhouse
+      - ./migrations/clickhouse:/docker-entrypoint-initdb.d:ro
     ulimits:
       nofile:
         soft: 262144
@@ -74,6 +77,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - llmlog
+
+  # ============================================================
+  # MinIO Init - 一次性初始化 bucket (启动后自动退出)
+  # 日志查看: docker compose logs minio-init
+  # ============================================================
+  minio-init:
+    image: minio/mc:latest
+    container_name: llmlog-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      LLMLOG_S3_ACCESS_KEY: "${LLMLOG_S3_ACCESS_KEY:-minioadmin}"
+      LLMLOG_S3_SECRET_KEY: "${LLMLOG_S3_SECRET_KEY:-minioadmin}"
+      LLMLOG_S3_BUCKET: "${LLMLOG_S3_BUCKET:-llm-logs}"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo ">> [minio-init] connecting to http://minio:9000"
+        until mc alias set local http://minio:9000 "$$LLMLOG_S3_ACCESS_KEY" "$$LLMLOG_S3_SECRET_KEY" >/dev/null 2>&1; do
+          echo ">> [minio-init] waiting minio ready..."
+          sleep 2
+        done
+        echo ">> [minio-init] creating bucket: $$LLMLOG_S3_BUCKET"
+        mc mb --ignore-existing local/"$$LLMLOG_S3_BUCKET"
+        echo ">> [minio-init] creating bucket: clickhouse-cold"
+        mc mb --ignore-existing local/clickhouse-cold
+        echo ">> [minio-init] buckets ready, exiting."
+    restart: "no"
     networks:
       - llmlog
 
@@ -131,6 +167,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     # gateway 镜像基于 distroless, 无 wget/curl/sh 做 healthcheck
     # liveness 由 `/healthz` HTTP 端点提供, k8s/外层探针直接调即可
     networks:
@@ -170,6 +208,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     networks:
       - llmlog
 
