@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from functools import lru_cache
 from typing import Any
 
 import clickhouse_connect
@@ -72,26 +72,34 @@ class ClickHouseClient:
 
 
 _client: ClickHouseClient | None = None
+_init_lock: asyncio.Lock | None = None
 
 
-@lru_cache
-def get_ch_client() -> ClickHouseClient:
-    """获取全局 ClickHouse client 单例."""
-    global _client
+async def get_ch_client() -> ClickHouseClient:
+    """获取全局 ClickHouse client 单例 (延迟初始化 + 并发安全).
+
+    clickhouse_connect.get_async_client 在新版本是 coroutine,
+    必须 await 执行才能拿到实际的 AsyncClient 对象.
+    """
+    global _client, _init_lock
     if _client is not None:
         return _client
-
-    s = get_settings()
-    raw = clickhouse_connect.get_async_client(
-        host=s.ch_host,
-        port=s.ch_port,
-        username=s.ch_user,
-        password=s.ch_password,
-        database=s.ch_database,
-        connect_timeout=10,
-        send_receive_timeout=s.ch_query_timeout,
-        compress=True,
-    )
-    _client = ClickHouseClient(raw, table=s.ch_table)
-    log.info("ClickHouse client 创建完成 (host=%s db=%s)", s.ch_host, s.ch_database)
-    return _client
+    if _init_lock is None:
+        _init_lock = asyncio.Lock()
+    async with _init_lock:
+        if _client is not None:
+            return _client
+        s = get_settings()
+        raw = await clickhouse_connect.get_async_client(
+            host=s.ch_host,
+            port=s.ch_port,
+            username=s.ch_user,
+            password=s.ch_password,
+            database=s.ch_database,
+            connect_timeout=10,
+            send_receive_timeout=s.ch_query_timeout,
+            compress=True,
+        )
+        _client = ClickHouseClient(raw, table=s.ch_table)
+        log.info("ClickHouse client 创建完成 (host=%s db=%s)", s.ch_host, s.ch_database)
+        return _client

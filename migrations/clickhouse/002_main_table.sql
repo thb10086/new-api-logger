@@ -122,9 +122,11 @@ ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
 ORDER BY (toStartOfHour(created_at), user_id, request_id)
 PRIMARY KEY (toStartOfHour(created_at), user_id)
-TTL  created_at + INTERVAL 365 DAY DELETE,
-     created_at + INTERVAL  90 DAY TO VOLUME 'cold',
-     created_at + INTERVAL   7 DAY TO VOLUME 'warm'
+-- TTL 表达式要求结果为 DateTime/Date 类型, 不支持直接用 DateTime64
+-- 所以用 toDateTime() 转换 (只影响 TTL 判断, 存储仍是毫秒精度)
+TTL  toDateTime(created_at) + INTERVAL 365 DAY DELETE,
+     toDateTime(created_at) + INTERVAL  90 DAY TO VOLUME 'cold',
+     toDateTime(created_at) + INTERVAL   7 DAY TO VOLUME 'warm'
 SETTINGS
     storage_policy = 'tiered',
     index_granularity = 8192,

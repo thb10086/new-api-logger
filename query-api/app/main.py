@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
     log.info("LLM Logger Query API v%s 启动", __version__)
 
     # 预热 CH client (验证可达)
-    ch = get_ch_client()
+    ch = await get_ch_client()
     if not await ch.ping():
         log.warning("ClickHouse 不可达 - 仍启动 service, 但端点会返回错误")
 

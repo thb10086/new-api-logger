@@ -35,7 +35,7 @@ async def require_token(
 
 
 async def get_ch() -> AsyncGenerator[ClickHouseClient, None]:
-    client = get_ch_client()
+    client = await get_ch_client()
     yield client
 
 
