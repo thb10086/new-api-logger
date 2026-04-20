@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.config import get_settings
@@ -71,6 +72,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ---- 全局异常处理 ----
+    _log = logging.getLogger(__name__)
+
+    @app.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Request, exc: Exception):
+        exc_name = type(exc).__name__
+        # ClickHouse 连接 / 查询异常 → 503
+        ch_errors = ("NetworkError", "SocketError", "DatabaseError", "OperationalError")
+        if exc_name in ch_errors or "clickhouse" in type(exc).__module__.lower():
+            _log.error("ClickHouse 异常: %s: %s", exc_name, exc)
+            return JSONResponse(
+                status_code=503,
+                content={"detail": f"ClickHouse 不可用: {exc_name}: {exc}"},
+            )
+        _log.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal Server Error: {exc_name}: {exc}"},
+        )
 
     app.include_router(health_router.router)
     app.include_router(traces_router.router)

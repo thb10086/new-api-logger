@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 import clickhouse_connect
@@ -28,15 +31,50 @@ class ClickHouseClient:
     def table(self) -> str:
         return self._table
 
+    @staticmethod
+    def _sanitize_params(params: dict[str, Any] | None) -> dict[str, Any] | None:
+        """将 Python 类型安全转为 clickhouse-connect 兼容格式."""
+        if not params:
+            return params
+        out: dict[str, Any] = {}
+        for k, v in params.items():
+            if isinstance(v, datetime):
+                out[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+            elif isinstance(v, date):
+                out[k] = v.strftime("%Y-%m-%d")
+            elif isinstance(v, bool):
+                out[k] = 1 if v else 0
+            else:
+                out[k] = v
+        return out
+
+    @staticmethod
+    def _sanitize_row(row: dict[str, Any]) -> dict[str, Any]:
+        """将 CH 返回的特殊类型转为 Python 基础类型 (Pydantic 可序列化)."""
+        for k, v in row.items():
+            if isinstance(v, (ipaddress.IPv4Address, ipaddress.IPv6Address)):
+                row[k] = str(v)
+            elif isinstance(v, Decimal):
+                row[k] = float(v)
+            elif isinstance(v, bytes):
+                row[k] = v.decode("utf-8", errors="replace")
+            elif hasattr(v, "item"):  # numpy scalar
+                row[k] = v.item()
+        return row
+
     async def query(
         self,
         sql: str,
         parameters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """执行查询, 返回 list of dict (列名为 key)."""
-        result = await self._client.query(sql, parameters=parameters)
+        safe_params = self._sanitize_params(parameters)
+        result = await self._client.query(sql, parameters=safe_params)
         cols = result.column_names
-        return [dict(zip(cols, row, strict=False)) for row in result.result_rows]
+        return [
+            self._sanitize_row(dict(zip(cols, row, strict=False)))
+            for row in result.result_rows
+        ]
 
     async def query_one(
         self,
@@ -51,10 +89,14 @@ class ClickHouseClient:
         sql: str,
         parameters: dict[str, Any] | None = None,
     ) -> Any:
-        result = await self._client.query(sql, parameters=parameters)
+        safe_params = self._sanitize_params(parameters)
+        result = await self._client.query(sql, parameters=safe_params)
         if not result.result_rows:
             return None
-        return result.result_rows[0][0]
+        v = result.result_rows[0][0]
+        if hasattr(v, "item"):
+            return v.item()
+        return v
 
     async def ping(self) -> bool:
         try:

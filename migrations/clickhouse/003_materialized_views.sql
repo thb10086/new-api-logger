@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS llm_errors_recent
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(created_at)
 ORDER BY (created_at, provider, upstream_status)
-TTL created_at + INTERVAL 30 DAY DELETE
+TTL toDateTime(created_at) + INTERVAL 30 DAY DELETE
 SETTINGS index_granularity = 4096;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_llm_errors_recent

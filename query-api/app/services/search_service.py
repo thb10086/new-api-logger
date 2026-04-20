@@ -70,7 +70,11 @@ async def list_errors(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """从 llm_errors_recent (近 30 天错误专表) 查询."""
+    """从 llm_errors_recent (近 30 天错误专表) 查询.
+
+    若专表不存在 (003 migration TTL bug 可能导致建表失败),
+    自动回退到从 llm_call_logs 主表的 is_error=1 记录查询.
+    """
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit, "offset": offset}
     if start:
@@ -86,6 +90,17 @@ async def list_errors(
         where.append("upstream_status = %(upstream_status)s")
         params["upstream_status"] = upstream_status
 
+    # 尝试专表, 失败时回退主表
+    table = "llm_errors_recent"
+    try:
+        await ch.query_scalar(f"SELECT 1 FROM {table} LIMIT 0")
+    except Exception:
+        table = ch.table
+        if not where:
+            where.append("is_error = 1")
+        else:
+            where.insert(0, "is_error = 1")
+
     where_clause = " WHERE " + " AND ".join(where) if where else ""
 
     sql = f"""
@@ -93,7 +108,7 @@ async def list_errors(
             request_id, created_at, provider, model, user_id,
             upstream_status, error_type, error_message,
             duration_ms, request_text_preview
-        FROM llm_errors_recent
+        FROM {table}
         {where_clause}
         ORDER BY created_at DESC
         LIMIT %(limit)s OFFSET %(offset)s
@@ -101,7 +116,7 @@ async def list_errors(
     rows = await ch.query(sql, params)
     count_params = {k: v for k, v in params.items() if k not in ("limit", "offset")}
     total = await ch.query_scalar(
-        f"SELECT count() FROM llm_errors_recent {where_clause}",
+        f"SELECT count() FROM {table} {where_clause}",
         count_params,
     )
     return rows, int(total or 0)
