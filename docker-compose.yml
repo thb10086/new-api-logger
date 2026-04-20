@@ -49,7 +49,10 @@ services:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      # 首次启动需要执行 /docker-entrypoint-initdb.d/*.sql (建表/索引/物化视图)
+      # 约需 60-90s, 期间 8123 可能拒绝连接. start_period 让 healthcheck 在此期间宽容失败.
+      start_period: 90s
     depends_on:
       - minio
     networks:

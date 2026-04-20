@@ -38,15 +38,22 @@ async def lifespan(_: FastAPI):
     log = logging.getLogger(__name__)
     log.info("LLM Logger Query API v%s 启动", __version__)
 
-    # 预热 CH client (验证可达)
-    ch = await get_ch_client()
-    if not await ch.ping():
-        log.warning("ClickHouse 不可达 - 仍启动 service, 但端点会返回错误")
+    # 预热 CH client (验证可达). 容忍首次失败: CH 首次启动时 initdb.d
+    # 可能还在跑建表/建索引, 此时 8123 可能拒绝连接. 启动阶段失败不阻塞服务,
+    # 后续请求会延迟重新 init client (见 database/clickhouse.py).
+    ch = None
+    try:
+        ch = await get_ch_client()
+        if not await ch.ping():
+            log.warning("ClickHouse 不可达 - 仍启动 service, 请求会延迟重试")
+    except Exception as e:
+        log.warning("ClickHouse 初始化失败,服务继续启动: %s", e)
 
     yield
 
     log.info("Query API 关闭中...")
-    await ch.close()
+    if ch is not None:
+        await ch.close()
 
 
 def create_app() -> FastAPI:
