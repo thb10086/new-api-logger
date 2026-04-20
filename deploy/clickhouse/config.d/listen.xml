@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse 网络监听配置.
+  
+  官方 ClickHouse 镜像自带 /etc/clickhouse-server/config.d/docker_related_config.xml
+  声明 <listen_host>0.0.0.0</listen_host>, 但本项目通过 volume 挂载
+  ./deploy/clickhouse/config.d 到 /etc/clickhouse-server/config.d 时会覆盖整个目录,
+  导致原配置丢失, CH 只监听 127.0.0.1, 其他容器连不上 clickhouse:8123.
+  
+  本文件补回 dual-stack (IPv4 + IPv6) 监听, 让同 docker network 的服务可访问.
+-->
+<clickhouse>
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <!-- 允许即使某些网卡绑定失败也继续启动 (如宿主禁用 IPv6) -->
+    <listen_try>1</listen_try>
+</clickhouse>
