@@ -22,19 +22,20 @@ x-logging: &default-logging
 services:
   clickhouse:
     ports:
-      - "127.0.0.1:${CH_HTTP_PORT:-8123}:8123"
-      - "127.0.0.1:${CH_TCP_PORT:-9000}:9000"
+      - "127.0.0.1:${CH_HTTP_PORT:-28123}:8123"
+      - "127.0.0.1:${CH_TCP_PORT:-29000}:9000"
     logging: *default-logging
     deploy:
       resources:
         limits:
-          cpus: "${CH_CPU_LIMIT:-4}"
-          memory: "${CH_MEM_LIMIT:-6g}"
+          # fallback 兼容 2 CPU / 4GB 小型 VPS; 大机器请在 .env 覆盖
+          cpus: "${CH_CPU_LIMIT:-1.5}"
+          memory: "${CH_MEM_LIMIT:-2g}"
 
   minio:
     ports:
-      - "127.0.0.1:${MINIO_API_PORT:-9100}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_API_PORT:-29100}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-29001}:9001"
     logging: *default-logging
     deploy:
       resources:
@@ -50,14 +51,15 @@ services:
       LLMLOG_CH_BATCH_INTERVAL: "${LLMLOG_CH_BATCH_INTERVAL:-300ms}"
       LLMLOG_LOG_LEVEL: "${LLMLOG_LOG_LEVEL:-info}"
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
-      - "127.0.0.1:${GATEWAY_METRICS_PORT:-9090}:9090"
+      - "${GATEWAY_PORT:-28080}:8080"
+      - "127.0.0.1:${GATEWAY_METRICS_PORT:-29090}:9090"
     logging: *default-logging
     deploy:
       resources:
         limits:
-          cpus: "${GATEWAY_CPU_LIMIT:-2}"
-          memory: "${GATEWAY_MEM_LIMIT:-1g}"
+          # fallback 兼容 2 CPU / 4GB 小型 VPS; 大机器请在 .env 覆盖
+          cpus: "${GATEWAY_CPU_LIMIT:-0.8}"
+          memory: "${GATEWAY_MEM_LIMIT:-512m}"
         reservations:
           cpus: "0.5"
           memory: "256m"
@@ -73,7 +75,7 @@ services:
 
   admin-ui:
     ports:
-      - "${ADMIN_UI_PORT:-8888}:80"
+      - "${ADMIN_UI_PORT:-28888}:80"
     logging: *default-logging
     deploy:
       resources:
