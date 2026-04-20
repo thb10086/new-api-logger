@@ -1,0 +1,61 @@
+# ============ 通用 ============
+.env
+.env.local
+.env.*.local
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# ============ IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ============ Go ============
+gateway/gateway
+gateway/gateway.exe
+gateway/bin/
+gateway/dist/
+gateway/coverage.out
+gateway/coverage.html
+gateway/vendor/
+gateway/config.yaml
+
+# ============ Python ============
+query-api/__pycache__/
+query-api/**/__pycache__/
+query-api/*.py[cod]
+query-api/*$py.class
+query-api/.venv/
+query-api/venv/
+query-api/.uv/
+query-api/.pytest_cache/
+query-api/.ruff_cache/
+query-api/.mypy_cache/
+query-api/htmlcov/
+query-api/.coverage
+query-api/dist/
+query-api/build/
+query-api/*.egg-info/
+
+# ============ Node ============
+admin-ui/node_modules/
+admin-ui/dist/
+admin-ui/.vite/
+admin-ui/coverage/
+admin-ui/.next/
+
+# ============ Docker / Data ============
+data/
+volumes/
+clickhouse_data/
+minio_data/
+
+# ============ Other ============
+.tasks/
+.cursor/
+.windsurf/local
+*.bak

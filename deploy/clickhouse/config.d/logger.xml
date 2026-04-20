@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- 减少日志噪音, 只保留 warning 以上 -->
+<clickhouse>
+    <logger>
+        <level>warning</level>
+        <console>true</console>
+    </logger>
+</clickhouse>

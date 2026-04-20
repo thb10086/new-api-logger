@@ -1,0 +1,12 @@
+.git
+.gitignore
+*.md
+bin/
+dist/
+coverage.out
+coverage.html
+*.test
+*.prof
+.env
+config.yaml
+vendor/

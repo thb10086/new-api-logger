@@ -1,0 +1,65 @@
+<?xml version="1.0"?>
+<!--
+  LLM Logger - ClickHouse 三级存储策略
+
+  - hot:  本地 NVMe (开发: 本地目录),  保留 0-7 天的最新数据
+  - warm: 本地 SSD  (开发: 本地目录),  保留 8-90 天
+  - cold: S3 兼容对象存储 (MinIO/COS),  保留 91-365 天
+-->
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hot>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/hot/</path>
+            </hot>
+            <warm>
+                <type>local</type>
+                <path>/var/lib/clickhouse/disks/warm/</path>
+            </warm>
+            <cold>
+                <type>s3</type>
+                <endpoint>http://minio:9000/clickhouse-cold/</endpoint>
+                <access_key_id>minioadmin</access_key_id>
+                <secret_access_key>minioadmin</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/cold_meta/</metadata_path>
+                <skip_access_check>true</skip_access_check>
+                <use_environment_credentials>false</use_environment_credentials>
+                <support_batch_delete>true</support_batch_delete>
+            </cold>
+        </disks>
+
+        <policies>
+            <!--
+              tiered: 三层存储策略, 配合 002_main_table.sql 的 TTL 移动规则
+              new part → hot → 7d → warm → 90d → cold → 365d → DELETE
+            -->
+            <tiered>
+                <volumes>
+                    <hot>
+                        <disk>hot</disk>
+                        <!-- hot 单 part 上限 1GB, 超出会优先去 warm -->
+                        <max_data_part_size_bytes>1073741824</max_data_part_size_bytes>
+                    </hot>
+                    <warm>
+                        <disk>warm</disk>
+                        <max_data_part_size_bytes>10737418240</max_data_part_size_bytes>
+                    </warm>
+                    <cold>
+                        <disk>cold</disk>
+                    </cold>
+                </volumes>
+                <move_factor>0.1</move_factor>
+            </tiered>
+
+            <!-- default: 单盘策略, 用于物化视图等小数据 -->
+            <default>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>

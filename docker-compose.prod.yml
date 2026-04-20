@@ -1,0 +1,82 @@
+# ============================================================
+# LLM Logger - 生产环境 Docker Compose override
+#
+# 使用方式:
+#   cp .env.prod.example .env
+#   # 修改 .env 中所有密码 + 上游 URL
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 关键差异 (vs 默认):
+#   - CH / MinIO / query-api 绑定 127.0.0.1, 不对公网暴露
+#   - 所有服务加资源上限 + 日志滚动
+#   - 所有组件强制 restart: unless-stopped
+#   - gateway 加大默认并发参数
+# ============================================================
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+services:
+  clickhouse:
+    ports:
+      - "127.0.0.1:${CH_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CH_TCP_PORT:-9000}:9000"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${CH_CPU_LIMIT:-4}"
+          memory: "${CH_MEM_LIMIT:-6g}"
+
+  minio:
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9100}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "1g"
+
+  gateway:
+    # 生产推荐调大并发
+    environment:
+      LLMLOG_CAPTURE_WORKERS: "${LLMLOG_CAPTURE_WORKERS:-16}"
+      LLMLOG_CH_BATCH_SIZE: "${LLMLOG_CH_BATCH_SIZE:-500}"
+      LLMLOG_CH_BATCH_INTERVAL: "${LLMLOG_CH_BATCH_INTERVAL:-300ms}"
+      LLMLOG_LOG_LEVEL: "${LLMLOG_LOG_LEVEL:-info}"
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+      - "127.0.0.1:${GATEWAY_METRICS_PORT:-9090}:9090"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${GATEWAY_CPU_LIMIT:-2}"
+          memory: "${GATEWAY_MEM_LIMIT:-1g}"
+        reservations:
+          cpus: "0.5"
+          memory: "256m"
+
+  query-api:
+    # 生产不对外暴露, 通过 admin-ui 内 nginx 反代
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "512m"
+
+  admin-ui:
+    ports:
+      - "${ADMIN_UI_PORT:-8888}:80"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: "128m"

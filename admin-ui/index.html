@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Logger</title>
+    <script>
+      // 运行时配置占位符, 容器启动时由 docker-entrypoint.sh 替换
+      // 本地 dev 模式下 Vite 不会替换, 这里保留默认值
+      window.__LLMLOG_CONFIG__ = (function () {
+        var raw = '__LLMLOG_CONFIG_PLACEHOLDER__';
+        if (raw.indexOf('__LLMLOG') === 0) return { apiBaseUrl: '/api' };
+        try { return JSON.parse(raw); } catch (e) { return { apiBaseUrl: '/api' }; }
+      })();
+    </script>
+  </head>
+  <body class="bg-gray-50">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

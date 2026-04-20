@@ -1,0 +1,30 @@
+import { useState } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import Layout from '@/components/Layout'
+import TokenGate from '@/components/TokenGate'
+import TracesPage from '@/pages/TracesPage'
+import TraceDetailPage from '@/pages/TraceDetailPage'
+import StatsPage from '@/pages/StatsPage'
+import HealthPage from '@/pages/HealthPage'
+import { getToken } from '@/api/client'
+
+export default function App() {
+  const [authed, setAuthed] = useState<boolean>(!!getToken())
+
+  if (!authed) {
+    return <TokenGate onAuthed={() => setAuthed(true)} />
+  }
+
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/" element={<Navigate to="/traces" replace />} />
+        <Route path="/traces" element={<TracesPage />} />
+        <Route path="/traces/:requestId" element={<TraceDetailPage />} />
+        <Route path="/stats" element={<StatsPage />} />
+        <Route path="/health" element={<HealthPage />} />
+        <Route path="*" element={<Navigate to="/traces" replace />} />
+      </Route>
+    </Routes>
+  )
+}
