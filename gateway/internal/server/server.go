@@ -14,7 +14,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/thb10086/new-api-logger/gateway/internal/capture"
@@ -107,20 +106,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 // makePassthroughHandler 创建一个仅转发不采集的 handler, 用于非 LLM 路径.
 //
-// 这样客户端可以把 newapi 全部路径都指向这个 gateway,
-// embeddings/image/audio 等会原样转发, 只有 4 个 LLM 路径会被采集.
+// 所有请求 (包括 / 首页、静态资源、前端页面) 都原样转发到 newapi,
+// 这样 gateway 可以完全替代 newapi 的端口, 用户无感知.
+// 只有 4 个 LLM 路径会在专用 handler 中被采集, 其他路径仅透传.
 func makePassthroughHandler(cfg *config.Config, fw *proxy.Forwarder, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// 排除一些不需要透传的路径 (如 /, /favicon.ico)
-		if r.URL.Path == "/" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"name":"llm-logger-gateway","status":"ok"}`))
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/healthz") || strings.HasPrefix(r.URL.Path, "/readyz") {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
+		// /healthz 和 /readyz 由上方专用 handler 处理, 这里不会到达.
+		// 所有其他路径 (包括 /) 全部转发给 newapi.
 		_ = fw.Forward(w, r)
 	}
 }

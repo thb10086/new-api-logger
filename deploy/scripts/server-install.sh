@@ -134,11 +134,11 @@ if [[ ! -f .env ]]; then
   echo ""
   warn "需要配置 newapi 上游地址 (LLMLOG_UPSTREAM_URL)"
   echo "  示例:"
-  echo "    - newapi 独立容器端口 3000 映射: http://host.docker.internal:3000"
-  echo "    - newapi 与本项目同 network    : http://newapi:3000"
-  echo "    - newapi 在宿主机其他端口      : http://<server-ip>:<port>"
-  read -rp "请输入 LLMLOG_UPSTREAM_URL [http://host.docker.internal:3000]: " UPSTREAM
-  UPSTREAM="${UPSTREAM:-http://host.docker.internal:3000}"
+  echo "    - newapi 改为端口 3001:            http://host.docker.internal:3001"
+  echo "    - newapi 与本项目同 network    : http://newapi:3001"
+  echo "    - newapi 在宿主机其他端口      : http://localhost:<port>"
+  read -rp "请输入 LLMLOG_UPSTREAM_URL [http://host.docker.internal:3001]: " UPSTREAM
+  UPSTREAM="${UPSTREAM:-http://host.docker.internal:3001}"
   sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=${UPSTREAM}|" .env
 
   chmod 600 .env

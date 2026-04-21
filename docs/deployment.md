@@ -51,7 +51,7 @@ sed -i "s|^LLMLOG_API_TOKEN=.*|LLMLOG_API_TOKEN=$(openssl rand -hex 32)|" .env
 chmod 600 .env
 
 # 3. 配置 newapi 上游地址 (见 §3.3 三种模式)
-sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000|" .env
+sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=http://host.docker.internal:3001|" .env
 
 # 4. 加载 .env 到 shell (compose v2.24+ 推荐)
 set -a; source .env; set +a
@@ -87,7 +87,7 @@ docker compose ps
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `LLMLOG_UPSTREAM_URL` | `http://host.docker.internal:3000` | newapi 上游地址, 见 §3.3 |
+| `LLMLOG_UPSTREAM_URL` | `http://host.docker.internal:3001` | newapi 上游地址, 见 §3.3 |
 | `LLMLOG_UPSTREAM_TIMEOUT` | `600s` | 上游请求超时 |
 | `LLMLOG_CH_DATABASE` | `llm_logger` | ClickHouse 数据库名 |
 | `LLMLOG_CH_USER` | `default` | ClickHouse 用户 |
@@ -107,11 +107,11 @@ docker compose ps
 
 ### 3.2 端口配置
 
-生产默认使用 **28xxx / 29xxx 段**, 避开常见服务端口:
+gateway 默认接管 newapi 原端口 (3000), 内部服务使用 28xxx / 29xxx 段:
 
 | 变量 | 默认 | 暴露 | 说明 |
 | --- | --- | --- | --- |
-| `GATEWAY_PORT` | `28080` | 公网 | LLM 代理入口, 客户端 `base_url` 指向此 |
+| `GATEWAY_PORT` | `3000` | 公网 | 接管 newapi 原端口, 用户无感知 |
 | `ADMIN_UI_PORT` | `28888` | 公网 | 管理面板 |
 | `CH_HTTP_PORT` | `28123` | `127.0.0.1` | ClickHouse HTTP |
 | `CH_TCP_PORT` | `29000` | `127.0.0.1` | ClickHouse Native TCP |
@@ -122,15 +122,40 @@ docker compose ps
 
 `docker-compose.prod.yml` 把非对外端口绑定到 `127.0.0.1`, 只有 `GATEWAY_PORT` / `ADMIN_UI_PORT` 开放到 `0.0.0.0`.
 
-### 3.3 newapi 上游连接三种模式
+### 3.3 核心架构: gateway 接管 newapi 端口
+
+gateway 透明接管 newapi 的原端口 (默认 3000), 所有请求 (前端页面 + API) 都经过 gateway.
+只有 4 个 LLM 路径被采集, 其他路径仅透传, 用户完全无感知.
+
+```text
+用户 -> http://IP:3000 -> gateway -> newapi:3001 (内部)
+                          |
+                          v (异步旁路, 不阻塞)
+                       ClickHouse
+```
+
+**前提: newapi 需要改端口**
+
+newapi 需从 3000 改为 3001 (或其他端口), 把 3000 让给 gateway:
+
+```bash
+# Docker 方式: 修改 newapi 的 docker-compose.yml 端口映射
+ports:
+  - "3001:3000"   # 宿主机 3001 -> 容器内 3000
+
+# 或直接改 newapi 启动参数
+export PORT=3001
+```
+
+#### 三种上游连接模式
 
 **模式 A — 走宿主机 (默认推荐)**
 
 ```bash
-LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000
+LLMLOG_UPSTREAM_URL=http://host.docker.internal:3001
 ```
 
-- 无需改动 newapi 容器
+- newapi 需改端口为 3001 (见下方 newapi 端口修改说明)
 - 依赖 compose 里已配置的 `extra_hosts: host.docker.internal:host-gateway`, Linux 下也可用
 - 流量多一跳, 单请求额外开销 < 1ms 可忽略
 
@@ -155,10 +180,10 @@ networks:
 `.env` 改:
 
 ```bash
-LLMLOG_UPSTREAM_URL=http://new-api:3000
+LLMLOG_UPSTREAM_URL=http://new-api:3001
 ```
 
-此时 newapi 可以关掉宿主 3000 端口映射, 只对内暴露, 安全性更高.
+此时 newapi 可以关掉宿主端口映射, 只对内暴露, 安全性更高.
 
 **模式 C — Gateway 共享宿主机网络**
 
@@ -281,49 +306,54 @@ docker compose exec -T minio sh -c "
 
 ## 6. 生产最佳实践
 
-### 6.1 HTTPS / 反向代理
+### 6.1 域名 HTTPS 访问 (Caddy)
 
-Admin UI 与 Gateway 端口建议挂在 Nginx / Caddy 后并启用 TLS. 示例 Nginx:
+如果需要通过域名 + HTTPS 访问 (如 `https://api.yourdomain.com`), 推荐 Caddy.
+Caddy 自动申请和续签 Let's Encrypt 证书, 零配置.
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name admin.yourdomain.com;
+**安装 Caddy**:
 
-    ssl_certificate     /etc/ssl/admin.crt;
-    ssl_certificate_key /etc/ssl/admin.key;
+```bash
+apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install caddy
+```
 
-    location / {
-        proxy_pass http://127.0.0.1:28888;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+**配置**: 复制仓库中的模板并替换域名:
+
+```bash
+cp deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sed -i 's/api.yourdomain.com/你的实际域名/' /etc/caddy/Caddyfile
+systemctl restart caddy
+```
+
+模板内容 (`deploy/caddy/Caddyfile`):
+
+```text
+api.yourdomain.com {
+    reverse_proxy localhost:3000
+
+    @streaming {
+        path /v1/chat/completions
+        path /v1/responses
+        path /v1/messages
+        path /v1beta/models/*
     }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name llm.yourdomain.com;
-
-    ssl_certificate     /etc/ssl/llm.crt;
-    ssl_certificate_key /etc/ssl/llm.key;
-
-    # Gateway 需支持 SSE 长连接
-    location / {
-        proxy_pass http://127.0.0.1:28080;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_buffering off;            # 关闭 buffer, SSE 首字节低延迟
-        proxy_read_timeout 600s;        # 允许长流
-        proxy_send_timeout 600s;
-        chunked_transfer_encoding on;
+    reverse_proxy @streaming localhost:3000 {
+        flush_interval -1
     }
 }
 ```
 
-挂上 Nginx 后, 把 `LLMLOG_API_CORS_ORIGINS` 改为 `https://admin.yourdomain.com`.
+**流量路径**:
+
+```text
+客户端 -> https://api.yourdomain.com:443 -> Caddy (TLS) -> gateway:3000 -> newapi:3001
+```
+
+启用域名后, 防火墙只需放行 443, 可关闭 3000 的公网访问.
+如果 Admin UI 也需要域名, 解注释 Caddyfile 中 `admin.yourdomain.com` 段.
 
 ### 6.2 资源限制
 
@@ -345,16 +375,16 @@ server {
 
 ```bash
 # ufw
-ufw allow 28080/tcp
-ufw allow 28888/tcp
+ufw allow 3000/tcp
+ufw allow 28888/tcp   # Admin UI
 
 # firewalld
-firewall-cmd --permanent --add-port=28080/tcp
-firewall-cmd --permanent --add-port=28888/tcp
+firewall-cmd --permanent --add-port=3000/tcp
+firewall-cmd --permanent --add-port=28888/tcp   # Admin UI
 firewall-cmd --reload
 ```
 
-挂了 Nginx + TLS 后, 可以只放 443, 关闭 28xxx 的公网访问.
+挂了 Caddy + TLS 后, 可以只放 443, 关闭 3000 的公网访问.
 
 ### 6.4 切换到腾讯 COS / AWS S3
 

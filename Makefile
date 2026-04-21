@@ -31,7 +31,7 @@ deploy: ## [推荐] 一键构建并启动全栈 (CH + MinIO + Gateway + API + UI
 	@echo "=============================================="
 	@echo "  部署完成"
 	@echo "=============================================="
-	@echo "  Gateway  (代理):  http://localhost:$${GATEWAY_PORT:-8080}"
+	@echo "  Gateway  (代理):  http://localhost:$${GATEWAY_PORT:-3000}"
 	@echo "  Admin UI (面板):  http://localhost:$${ADMIN_UI_PORT:-8888}"
 	@echo "  MinIO Console:    http://localhost:$${MINIO_CONSOLE_PORT:-9001}"
 	@echo "=============================================="

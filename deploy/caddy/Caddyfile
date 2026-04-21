@@ -1,0 +1,45 @@
+# ============================================================
+# LLM Logger - Caddy 反向代理 (域名 HTTPS 场景)
+#
+# Caddy 自动申请 + 续签 Let's Encrypt TLS 证书, 零配置.
+#
+# 使用方式:
+#   1. 把 api.yourdomain.com 替换为你的实际域名
+#   2. DNS 把域名 A 记录指向服务器公网 IP
+#   3. 安装 Caddy: apt install caddy  (或参考 https://caddyserver.com/docs/install)
+#   4. 复制此文件到 /etc/caddy/Caddyfile
+#   5. systemctl restart caddy
+#
+# 前提: llm-logger gateway 已在 localhost:3000 运行
+# ============================================================
+
+# ============================================================
+# 场景 A: 域名直接到 gateway (推荐)
+#
+# 客户端 base_url: https://api.yourdomain.com/v1
+# 浏览器管理页:    https://api.yourdomain.com (newapi 前端)
+# ============================================================
+api.yourdomain.com {
+    reverse_proxy localhost:3000
+
+    # SSE 流式响应: 关闭 response buffering
+    # Caddy 默认不缓冲, 此处显式声明以确保
+    @streaming {
+        path /v1/chat/completions
+        path /v1/responses
+        path /v1/messages
+        path /v1beta/models/*
+    }
+    reverse_proxy @streaming localhost:3000 {
+        flush_interval -1
+    }
+}
+
+# ============================================================
+# 场景 B (可选): Admin UI 也用域名
+#
+# 浏览器: https://admin.yourdomain.com
+# ============================================================
+# admin.yourdomain.com {
+#     reverse_proxy localhost:28888
+# }
