@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from app.database.clickhouse import ClickHouseClient
@@ -25,8 +25,17 @@ async def usage_stats(
     table = "llm_usage_daily" if group_by == "day" else "llm_usage_hourly"
     bucket_col = "day" if group_by == "day" else "hour"
 
+    # llm_usage_daily.day 是 Date 类型, 必须传 date 而非 datetime, 否则
+    # ClickHouse 报 TYPE_MISMATCH: Cannot convert '2026-03-22 15:17:55' to Date
+    if group_by == "day":
+        start_param: date | datetime = start.date()
+        end_param: date | datetime = end.date()
+    else:
+        start_param = start
+        end_param = end
+
     where = [f"{bucket_col} >= %(start)s", f"{bucket_col} < %(end)s"]
-    params: dict[str, Any] = {"start": start, "end": end}
+    params: dict[str, Any] = {"start": start_param, "end": end_param}
     if provider:
         where.append("provider = %(provider)s")
         params["provider"] = provider
