@@ -36,8 +36,8 @@ die()  { echo -e "${C_RED}[FATAL]${C_NONE} $*" >&2; exit 1; }
 # -------- 前置检查 --------
 [[ $EUID -eq 0 ]] || die "请使用 sudo 或 root 权限运行此脚本"
 
-REPO_URL="${REPO_URL:-https://github.com/prismai/llm-logger.git}"
-INSTALL_DIR="${INSTALL_DIR:-/opt/llm-logger}"
+REPO_URL="${REPO_URL:-https://github.com/thb10086/new-api-logger.git}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/new-api-logger}"
 BRANCH="${BRANCH:-main}"
 
 log "安装目录: ${INSTALL_DIR}"

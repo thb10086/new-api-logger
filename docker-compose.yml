@@ -133,7 +133,7 @@ services:
     build:
       context: ./gateway
       dockerfile: Dockerfile
-    image: prismai/llm-logger-gateway:latest
+    image: thb10086/new-api-logger-gateway:latest
     container_name: llmlog-gateway
     hostname: gateway
     restart: unless-stopped
@@ -194,7 +194,7 @@ services:
     build:
       context: ./query-api
       dockerfile: Dockerfile
-    image: prismai/llm-logger-query-api:latest
+    image: thb10086/new-api-logger-query-api:latest
     container_name: llmlog-query-api
     hostname: query-api
     restart: unless-stopped
@@ -232,7 +232,7 @@ services:
     build:
       context: ./admin-ui
       dockerfile: Dockerfile
-    image: prismai/llm-logger-admin-ui:latest
+    image: thb10086/new-api-logger-admin-ui:latest
     container_name: llmlog-admin-ui
     hostname: admin-ui
     restart: unless-stopped

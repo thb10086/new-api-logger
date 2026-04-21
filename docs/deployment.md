@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/thb10086/new-api-logger/main/deploy
 ```bash
 # 1. Clone
 git clone https://github.com/thb10086/new-api-logger.git /opt/llm-logger
-cd /opt/llm-logger
+cd /opt/new-api-logger
 
 # 2. 生成生产 .env
 cp .env.prod.example .env
@@ -526,13 +526,13 @@ docker compose exec -T clickhouse clickhouse-client --query \
 ## 9. 卸载
 
 ```bash
-cd /opt/llm-logger
+cd /opt/new-api-logger
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 docker image rm \
-  prismai/llm-logger-gateway:latest \
-  prismai/llm-logger-query-api:latest \
-  prismai/llm-logger-admin-ui:latest
-cd .. && rm -rf /opt/llm-logger
+  thb10086/new-api-logger-gateway:latest \
+  thb10086/new-api-logger-query-api:latest \
+  thb10086/new-api-logger-admin-ui:latest
+cd .. && rm -rf /opt/new-api-logger
 ```
 
 数据卷 `down -v` 已删除. 如有备份需求, 先执行 §5.3 再卸载.

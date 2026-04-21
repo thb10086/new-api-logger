@@ -125,7 +125,7 @@ gateway-lint: ## Go lint
 	cd gateway && golangci-lint run ./...
 
 gateway-image: ## 构建 Go gateway Docker 镜像
-	docker build -t prismai/llm-logger-gateway:latest gateway/
+	docker build -t thb10086/new-api-logger-gateway:latest gateway/
 
 # ============ Python Query API ============
 
@@ -142,7 +142,7 @@ query-api-fmt: ## Python 格式化
 	cd query-api && uv run ruff format . && uv run ruff check --fix .
 
 query-api-image: ## 构建 Query API Docker 镜像
-	docker build -t prismai/llm-logger-query-api:latest query-api/
+	docker build -t thb10086/new-api-logger-query-api:latest query-api/
 
 # ============ Admin UI ============
 
@@ -156,7 +156,7 @@ admin-ui-build: ## 构建前端静态资源
 	cd admin-ui && npm run build
 
 admin-ui-image: ## 构建 Admin UI Docker 镜像
-	docker build -t prismai/llm-logger-admin-ui:latest admin-ui/
+	docker build -t thb10086/new-api-logger-admin-ui:latest admin-ui/
 
 # ============ 全栈 ============
 
