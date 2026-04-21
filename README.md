@@ -147,6 +147,10 @@ curl -H "Authorization: Bearer $TOKEN" "http://localhost:28000/api/v1/traces?lim
 - **全文初筛** — CH `ngrambf_v1` 索引支撑中文混合英文场景
 - **物化视图聚合** — 按小时 × 模型 × 用户预聚合,Grafana 查询百毫秒级
 - **TTL 自动管理** — 主表 7d/90d/365d 三段生命周期,过期自动迁移和删除
+- **零数据丢失** — CH 不可用时 batch 自动落盘兜底,恢复后 replayer 回放
+- **用户画像** — 按 `user_id` × `client_type` 聚合近 30 天 token 消耗 / 请求数 / 错误率
+- **客户端识别** — 自动分类 Claude Code / 各 SDK / 桌面客户端 / 浏览器,面板一键过滤
+- **流式导出** — `/api/v1/export/traces` 按过滤条件导出 JSONL / CSV,最多 1000 万行
 
 ## 性能指标 (设计目标)
 

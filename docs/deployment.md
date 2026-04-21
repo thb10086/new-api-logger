@@ -99,6 +99,10 @@ docker compose ps
 | `LLMLOG_CAPTURE_WORKERS` | `16` | 采集并发 worker 数 |
 | `LLMLOG_CH_BATCH_SIZE` | `500` | ClickHouse 批量写入条数 |
 | `LLMLOG_CH_BATCH_INTERVAL` | `300ms` | ClickHouse 批量写入最大延迟 |
+| `LLMLOG_DISK_SPOOL_ENABLED` | `true` | CH 不可用时落盘兜底 (零丢失保证) |
+| `LLMLOG_DISK_SPOOL_DIR` | `/var/lib/llmlog/spool` | 兜底队列本地路径 (容器内, 已挂 volume) |
+| `LLMLOG_DISK_SPOOL_MAX_BYTES` | `10737418240` | 兜底队列最大磁盘占用 (默认 10 GB) |
+| `LLMLOG_DISK_SPOOL_INTERVAL` | `30s` | 重放扫描周期 |
 
 ### 3.2 端口配置
 
@@ -181,10 +185,20 @@ migrations/clickhouse/
 ├── 001_init.sql                   # 建库 + schema_versions 记录表
 ├── 002_main_table.sql             # 主表 llm_calls (冷热分层, TTL)
 ├── 003_materialized_views.sql     # 按小时 × 模型 × 用户预聚合视图
-└── 004_helper_views.sql           # 运维辅助视图
+├── 004_helper_views.sql           # 运维辅助视图
+└── 005_client_type.sql            # 客户端类型字段 + 物化视图扩展 (幂等)
 ```
 
 **只在首次启动生效**。数据卷 `clickhouse_data` 已存在时不重复执行,避免误删。
+
+**对既有部署升级**: `005_client_type.sql` 设计为幂等,可直接手动应用而不清卷:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client --multiquery \
+  < migrations/clickhouse/005_client_type.sql
+```
+
+应用后, gateway 会自动开始填写 `client_type`/`client_app_version`/`user_agent` 字段,历史数据保持空值。
 
 ### 4.2 MinIO Bucket
 
@@ -448,6 +462,34 @@ docker compose exec gateway getent hosts host.docker.internal
 - **401**: `.env` 里的 `LLMLOG_API_TOKEN` 与前端输入的不一致
 - **CORS**: `LLMLOG_API_CORS_ORIGINS` 没包含实际访问的域名
 - **改后需重启 query-api**:`docker compose restart query-api`
+
+### 7.6 磁盘兜底队列积压 (spool)
+
+当 CH 长时间不可用时,gateway 会把 batch 写到 `/var/lib/llmlog/spool` 下的 NDJSON 文件,待 CH 恢复后自动 replayer 回放。
+
+```bash
+# 查看队列堆积量 (容器内)
+docker compose exec gateway sh -c "du -sh /var/lib/llmlog/spool && ls /var/lib/llmlog/spool | wc -l"
+
+# 看 replayer 日志 (替换 docker compose logs gateway)
+docker compose logs gateway | grep -Ei "spool|replayer"
+
+# 强制触发 replay (实际上 30s 自动扫描, 无需手动)
+docker compose restart gateway
+```
+
+- 文件堆积到 `LLMLOG_DISK_SPOOL_MAX_BYTES` 时,新数据会被**丢弃**并告警,建议监控容器 `/var/lib/llmlog/spool` 占用
+- 文件命名形如 `batch-YYYYMMDD-HHMMSS-<n>.ndjson`,可 `jq` 读取
+- 回放成功后文件自动删除
+
+### 7.7 用户画像页显示空 / "未识别"
+
+- **空页面**: `GET /api/v1/users` 依赖 `user_id` 非空,老数据 (未跑 005 migration) 的 `user_id` 取自 `X-Forwarded-User` header,若客户端没传则仍是空
+  - 验证: `SELECT count() FROM llm_call_logs WHERE user_id != ''`
+  - 解法: 让客户端发请求时携带 `X-Forwarded-User: <id>`,或在 newapi 层面给每个 API key 关联一个 user_id
+- **全是 "未识别"**: 客户端 UA 不在 `client_classify.go` 的识别清单中
+  - 打开 trace 详情查看 `client_user_agent` 原值
+  - 需要新增规则: 编辑 `gateway/internal/handlers/client_classify.go` 加分支,重启 gateway
 
 ---
 
