@@ -3,12 +3,15 @@ import { Link } from 'react-router-dom'
 import { Search, ExternalLink } from 'lucide-react'
 import { api, type SearchHit } from '@/api/client'
 import Badge, { ProviderBadge } from '@/components/Badge'
+import ClientTypeFilter, { CLIENT_TYPE_LABEL } from '@/components/ClientTypeFilter'
 import { formatTime, truncate } from '@/lib/utils'
 
 export default function SearchPage() {
   const [query, setQuery] = useState('')
   const [field, setField] = useState<'request' | 'response'>('request')
   const [provider, setProvider] = useState('')
+  const [clientType, setClientType] = useState('')
+  const [userId, setUserId] = useState('')
   const [results, setResults] = useState<SearchHit[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -25,7 +28,13 @@ export default function SearchPage() {
     setError('')
     setSearched(true)
     try {
-      const r = await api.search({ q: query, field, provider: provider || undefined })
+      const r = await api.search({
+        q: query,
+        field,
+        provider: provider || undefined,
+        client_type: clientType || undefined,
+        user_id: userId || undefined,
+      })
       setResults(r.items)
       setTotal(r.total)
     } catch (err) {
@@ -65,12 +74,24 @@ export default function SearchPage() {
             <option value="request">请求内容</option>
             <option value="response">响应内容</option>
           </select>
+          <ClientTypeFilter
+            value={clientType}
+            onChange={setClientType}
+            className="px-3 py-2 text-sm border border-slate-300 rounded-md bg-white w-40"
+          />
           <input
             type="text"
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
             placeholder="Provider (可选)"
-            className="px-3 py-2 text-sm border border-slate-300 rounded-md w-36"
+            className="px-3 py-2 text-sm border border-slate-300 rounded-md w-32"
+          />
+          <input
+            type="text"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            placeholder="user_id (可选)"
+            className="px-3 py-2 text-sm border border-slate-300 rounded-md w-32"
           />
           <button
             type="submit"
@@ -113,6 +134,11 @@ export default function SearchPage() {
                 >
                   <div className="flex items-center gap-2 mb-1.5">
                     <ProviderBadge provider={hit.provider} />
+                    {hit.client_type && (
+                      <Badge variant={hit.client_type === 'claude_code' ? 'purple' : 'gray'}>
+                        {CLIENT_TYPE_LABEL[hit.client_type] || hit.client_type}
+                      </Badge>
+                    )}
                     <span className="text-xs font-mono text-slate-600">{hit.model}</span>
                     {hit.is_error && <Badge variant="error">error</Badge>}
                     <span className="text-xs text-slate-400 ml-auto">{formatTime(hit.created_at)}</span>

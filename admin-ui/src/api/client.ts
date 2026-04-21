@@ -86,6 +86,8 @@ export interface TraceSummary {
   is_stream: boolean
   user_id?: string
   api_key_prefix?: string
+  client_type?: string
+  client_app_version?: string
   upstream_status: number
   is_error: boolean
   error_message?: string
@@ -180,6 +182,7 @@ export interface SearchHit {
   provider: string
   model: string
   user_id?: string
+  client_type?: string
   snippet: string
   is_error: boolean
 }
@@ -190,11 +193,38 @@ export interface ErrorRow {
   provider: string
   model: string
   user_id?: string
+  client_type?: string
   upstream_status: number
   error_type: string
   error_message: string
   duration_ms: number
   request_text_preview: string
+}
+
+export interface UserProfile {
+  user_id: string
+  client_type?: string
+  api_key_prefix?: string
+  user_agent?: string
+  total_requests: number
+  total_errors: number
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cached_tokens?: number
+  reasoning_tokens?: number
+  request_bytes?: number
+  response_bytes?: number
+  models_used: string[]
+  providers_used: string[]
+  first_seen: string
+  last_seen: string
+  avg_duration_ms: number
+}
+
+export interface UserListResponse {
+  items: UserProfile[]
+  total: number
 }
 
 export interface ErrorListResponse {
@@ -208,6 +238,8 @@ export interface ListTracesParams {
   provider?: string
   model?: string
   user_id?: string
+  api_key_prefix?: string
+  client_type?: string
   is_error?: boolean
   start?: string
   end?: string
@@ -252,6 +284,8 @@ export const api = {
     q: string
     field?: 'request' | 'response'
     provider?: string
+    client_type?: string
+    user_id?: string
     limit?: number
   }): Promise<{ items: SearchHit[]; total: number; query: string; field: string }> {
     const q = new URLSearchParams()
@@ -263,6 +297,7 @@ export const api = {
 
   async errors(params: {
     provider?: string
+    client_type?: string
     upstream_status?: number
     start?: string
     end?: string
@@ -274,6 +309,82 @@ export const api = {
       if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
     })
     return request<ErrorListResponse>(`/api/v1/errors?${q.toString()}`)
+  },
+
+  async users(params: {
+    client_type?: string
+    min_requests?: number
+    days?: number
+    order_by?: 'total_tokens' | 'total_requests' | 'last_seen'
+    limit?: number
+    offset?: number
+  } = {}): Promise<UserListResponse> {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
+    })
+    return request<UserListResponse>(`/api/v1/users?${q.toString()}`)
+  },
+
+  async userProfile(userId: string, days = 30): Promise<UserProfile> {
+    return request<UserProfile>(`/api/v1/users/${encodeURIComponent(userId)}?days=${days}`)
+  },
+
+  async userTraces(
+    userId: string,
+    params: { limit?: number; offset?: number; days?: number } = {},
+  ): Promise<TraceListResponse> {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
+    })
+    return request<TraceListResponse>(
+      `/api/v1/users/${encodeURIComponent(userId)}/traces?${q.toString()}`,
+    )
+  },
+
+  /** 返回导出 URL (直接 window.open 触发下载), 由调用方拼接 token */
+  exportTracesUrl(params: {
+    format?: 'jsonl' | 'csv'
+    include_body?: boolean
+    provider?: string
+    client_type?: string
+    user_id?: string
+    api_key_prefix?: string
+    is_error?: boolean
+    start?: string
+    end?: string
+    max_rows?: number
+  } = {}): string {
+    const q = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
+    })
+    const token = getToken()
+    if (token) q.set('_token', token)
+    return `${API_BASE}/api/v1/export/traces?${q.toString()}`
+  },
+
+  /** 通过 fetch + blob 触发下载 (带 Authorization header, 不依赖 URL 里的 token) */
+  async downloadExport(params: Parameters<typeof api.exportTracesUrl>[0], filename?: string): Promise<void> {
+    const q = new URLSearchParams()
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
+    })
+    const token = getToken()
+    const resp = await fetch(`${API_BASE}/api/v1/export/traces?${q.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) throw new HTTPError(resp.status, `导出失败 HTTP ${resp.status}`)
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename || `export-${Date.now()}.${params?.format ?? 'jsonl'}`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
   },
 
   async ping(): Promise<{ status: string; clickhouse?: boolean }> {

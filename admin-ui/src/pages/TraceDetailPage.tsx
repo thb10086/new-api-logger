@@ -214,8 +214,13 @@ export default function TraceDetailPage() {
       <div className="bg-white rounded-lg border border-slate-200 p-5 mb-4">
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <ProviderBadge provider={trace.provider} />
+              {trace.client_type && (
+                <Badge variant={trace.client_type === 'claude_code' ? 'purple' : 'gray'}>
+                  {trace.client_type}
+                </Badge>
+              )}
               {trace.is_stream && <Badge variant="gray">SSE</Badge>}
               <StatusBadge status={trace.upstream_status} />
               {trace.is_error && <Badge variant="error">{trace.error_type || 'error'}</Badge>}
@@ -231,6 +236,31 @@ export default function TraceDetailPage() {
                 {copiedId ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
               </button>
             </div>
+            {(trace.user_id || trace.api_key_prefix) && (
+              <div className="text-xs text-slate-500 mt-1 space-x-3">
+                {trace.user_id && (
+                  <>
+                    <span>user: </span>
+                    <Link
+                      to={`/users/${encodeURIComponent(trace.user_id)}`}
+                      className="font-mono text-brand-600 hover:underline"
+                    >
+                      {trace.user_id}
+                    </Link>
+                  </>
+                )}
+                {trace.api_key_prefix && (
+                  <span>
+                    key: <span className="font-mono">{trace.api_key_prefix}</span>
+                  </span>
+                )}
+                {trace.client_app_version && (
+                  <span title={trace.client_user_agent}>
+                    ua: <span className="font-mono">{trace.client_app_version}</span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <button
             onClick={() => void toggleRaw()}

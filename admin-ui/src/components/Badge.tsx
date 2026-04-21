@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-type Variant = 'default' | 'success' | 'warning' | 'error' | 'info' | 'gray'
+type Variant = 'default' | 'success' | 'warning' | 'error' | 'info' | 'gray' | 'purple'
 
 interface Props {
   variant?: Variant
@@ -16,6 +16,7 @@ const variantClasses: Record<Variant, string> = {
   error: 'bg-red-100 text-red-700',
   info: 'bg-blue-100 text-blue-700',
   gray: 'bg-gray-200 text-gray-600',
+  purple: 'bg-purple-100 text-purple-700',
 }
 
 export default function Badge({ variant = 'default', children, className }: Props) {

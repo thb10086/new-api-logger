@@ -1,10 +1,19 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Activity, AlertTriangle, BarChart3, ListTree, LogOut, Search } from 'lucide-react'
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  ListTree,
+  LogOut,
+  Search,
+  Users,
+} from 'lucide-react'
 import { clearToken } from '@/api/client'
 import { cn } from '@/lib/utils'
 
 const navItems = [
   { to: '/traces', label: 'Traces', icon: ListTree },
+  { to: '/users', label: '用户画像', icon: Users },
   { to: '/search', label: '全文搜索', icon: Search },
   { to: '/errors', label: '错误诊断', icon: AlertTriangle },
   { to: '/stats', label: '统计看板', icon: BarChart3 },

@@ -8,6 +8,8 @@ import StatsPage from '@/pages/StatsPage'
 import HealthPage from '@/pages/HealthPage'
 import SearchPage from '@/pages/SearchPage'
 import ErrorsPage from '@/pages/ErrorsPage'
+import UsersPage from '@/pages/UsersPage'
+import UserDetailPage from '@/pages/UserDetailPage'
 import { getToken } from '@/api/client'
 
 export default function App() {
@@ -23,6 +25,8 @@ export default function App() {
         <Route path="/" element={<Navigate to="/traces" replace />} />
         <Route path="/traces" element={<TracesPage />} />
         <Route path="/traces/:requestId" element={<TraceDetailPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/users/:userId" element={<UserDetailPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/errors" element={<ErrorsPage />} />
         <Route path="/stats" element={<StatsPage />} />

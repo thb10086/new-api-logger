@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react'
 import { api, type ErrorRow } from '@/api/client'
 import Badge, { ProviderBadge, StatusBadge } from '@/components/Badge'
+import ClientTypeFilter, { CLIENT_TYPE_LABEL } from '@/components/ClientTypeFilter'
 import { formatDuration, formatTime, truncate } from '@/lib/utils'
 
 export default function ErrorsPage() {
@@ -11,6 +12,7 @@ export default function ErrorsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [provider, setProvider] = useState('')
+  const [clientType, setClientType] = useState('')
   const [offset, setOffset] = useState(0)
   const limit = 50
 
@@ -18,7 +20,12 @@ export default function ErrorsPage() {
     setLoading(true)
     setError('')
     try {
-      const r = await api.errors({ provider: provider || undefined, limit, offset })
+      const r = await api.errors({
+        provider: provider || undefined,
+        client_type: clientType || undefined,
+        limit,
+        offset,
+      })
       setRows(r.items)
       setTotal(r.total)
     } catch (e) {
@@ -31,7 +38,7 @@ export default function ErrorsPage() {
   useEffect(() => {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offset, provider])
+  }, [offset, provider, clientType])
 
   return (
     <div className="p-6">
@@ -41,6 +48,14 @@ export default function ErrorsPage() {
           <p className="text-sm text-slate-500 mt-1">近期错误请求 (近 30 天)</p>
         </div>
         <div className="flex items-center gap-3">
+          <ClientTypeFilter
+            value={clientType}
+            onChange={(v) => {
+              setClientType(v)
+              setOffset(0)
+            }}
+            className="px-3 py-1.5 text-sm border border-slate-300 rounded-md w-40 bg-white"
+          />
           <input
             type="text"
             value={provider}
@@ -74,6 +89,7 @@ export default function ErrorsPage() {
             <tr>
               <th className="text-left px-4 py-3 font-medium text-slate-700">时间</th>
               <th className="text-left px-4 py-3 font-medium text-slate-700">Provider</th>
+              <th className="text-left px-4 py-3 font-medium text-slate-700">客户端</th>
               <th className="text-left px-4 py-3 font-medium text-slate-700">Model</th>
               <th className="text-left px-4 py-3 font-medium text-slate-700">Status</th>
               <th className="text-left px-4 py-3 font-medium text-slate-700">Error Type</th>
@@ -85,13 +101,13 @@ export default function ErrorsPage() {
           <tbody className="divide-y divide-slate-100">
             {loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
                   加载中...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
                   <AlertTriangle className="w-6 h-6 mx-auto mb-2 opacity-50" />
                   没有错误记录
                 </td>
@@ -104,6 +120,15 @@ export default function ErrorsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <ProviderBadge provider={row.provider} />
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.client_type ? (
+                      <Badge variant={row.client_type === 'claude_code' ? 'purple' : 'gray'}>
+                        {CLIENT_TYPE_LABEL[row.client_type] || row.client_type}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-slate-400">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-700">
                     {row.model}

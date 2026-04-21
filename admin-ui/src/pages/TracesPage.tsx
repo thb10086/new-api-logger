@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Filter, RefreshCw, Search } from 'lucide-react'
+import { Download, Filter, RefreshCw, Search } from 'lucide-react'
 import { api, type TraceListResponse } from '@/api/client'
 import Badge, { ProviderBadge, StatusBadge } from '@/components/Badge'
+import ClientTypeFilter, { CLIENT_TYPE_LABEL } from '@/components/ClientTypeFilter'
 import { formatDuration, formatNumber, formatTime, truncate } from '@/lib/utils'
 
 const PAGE_SIZE = 50
@@ -24,8 +25,10 @@ export default function TracesPage() {
   const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
   const [userId, setUserId] = useState('')
+  const [clientType, setClientType] = useState('')
   const [isError, setIsError] = useState<'all' | 'true' | 'false'>('all')
   const [offset, setOffset] = useState(0)
+  const [exporting, setExporting] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -35,6 +38,7 @@ export default function TracesPage() {
         provider: provider || undefined,
         model: model || undefined,
         user_id: userId || undefined,
+        client_type: clientType || undefined,
         is_error: isError === 'all' ? undefined : isError === 'true',
         limit: PAGE_SIZE,
         offset,
@@ -44,6 +48,28 @@ export default function TracesPage() {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleExport(format: 'jsonl' | 'csv') {
+    setExporting(true)
+    setError('')
+    try {
+      await api.downloadExport(
+        {
+          format,
+          provider: provider || undefined,
+          client_type: clientType || undefined,
+          user_id: userId || undefined,
+          is_error: isError === 'all' ? undefined : isError === 'true',
+          max_rows: 100_000,
+        },
+        `traces-${new Date().toISOString().slice(0, 10)}.${format}`,
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -65,18 +91,37 @@ export default function TracesPage() {
           <h2 className="text-2xl font-semibold text-slate-900">请求 Traces</h2>
           <p className="text-sm text-slate-500 mt-1">浏览所有 LLM 调用记录</p>
         </div>
-        <button
-          onClick={() => void load()}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          刷新
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void handleExport('jsonl')}
+            disabled={exporting}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+            title="按当前过滤条件导出 JSONL (最多 10 万条)"
+          >
+            <Download className="w-4 h-4" />
+            导出 JSONL
+          </button>
+          <button
+            onClick={() => void handleExport('csv')}
+            disabled={exporting}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" />
+            导出 CSV
+          </button>
+          <button
+            onClick={() => void load()}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </button>
+        </div>
       </div>
 
       {/* Filter bar */}
       <div className="bg-white rounded-lg border border-slate-200 p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
           <select
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
@@ -88,6 +133,11 @@ export default function TracesPage() {
               </option>
             ))}
           </select>
+          <ClientTypeFilter
+            value={clientType}
+            onChange={setClientType}
+            className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white"
+          />
           <input
             type="text"
             placeholder="model 精确匹配"
@@ -136,6 +186,7 @@ export default function TracesPage() {
               <tr className="text-left text-xs uppercase text-slate-500">
                 <th className="px-4 py-3">时间</th>
                 <th className="px-4 py-3">Provider</th>
+                <th className="px-4 py-3">客户端</th>
                 <th className="px-4 py-3">Model</th>
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3">Status</th>
@@ -162,6 +213,15 @@ export default function TracesPage() {
                       <Badge variant="gray" className="ml-1">
                         SSE
                       </Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.client_type ? (
+                      <Badge variant={row.client_type === 'claude_code' ? 'purple' : 'gray'}>
+                        {CLIENT_TYPE_LABEL[row.client_type] || row.client_type}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-slate-400">-</span>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-700">{row.model}</td>
@@ -195,7 +255,7 @@ export default function TracesPage() {
               ))}
               {data?.items.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-400">
                     <Filter className="w-6 h-6 mx-auto mb-2 opacity-50" />
                     没有匹配的记录
                   </td>
