@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/prismai/llm-logger/gateway/internal/sse"
+	"github.com/thb10086/new-api-logger/gateway/internal/sse"
 )
 
 // OpenAIResponses 创建 OpenAI Responses 协议 parser.

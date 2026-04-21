@@ -7,7 +7,7 @@ import (
 	"net/http"
 	_ "net/http/pprof" // 注册 pprof handlers 到 DefaultServeMux
 
-	"github.com/prismai/llm-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 

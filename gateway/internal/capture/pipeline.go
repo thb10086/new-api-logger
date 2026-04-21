@@ -20,7 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
 )
 
 // COSSink 抽象大 body 上传接口 (避免 import 循环).

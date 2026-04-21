@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/capture"
-	"github.com/prismai/llm-logger/gateway/internal/config"
-	"github.com/prismai/llm-logger/gateway/internal/pkg/hash"
-	"github.com/prismai/llm-logger/gateway/internal/pkg/id"
-	"github.com/prismai/llm-logger/gateway/internal/protocol"
-	"github.com/prismai/llm-logger/gateway/internal/proxy"
-	"github.com/prismai/llm-logger/gateway/internal/sse"
+	"github.com/thb10086/new-api-logger/gateway/internal/capture"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/pkg/hash"
+	"github.com/thb10086/new-api-logger/gateway/internal/pkg/id"
+	"github.com/thb10086/new-api-logger/gateway/internal/protocol"
+	"github.com/thb10086/new-api-logger/gateway/internal/proxy"
+	"github.com/thb10086/new-api-logger/gateway/internal/sse"
 )
 
 // Handler 是单个协议的 HTTP handler.

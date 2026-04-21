@@ -15,7 +15,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/prismai/llm-logger/gateway/internal/sse"
+	"github.com/thb10086/new-api-logger/gateway/internal/sse"
 )
 
 // Gemini 创建 Gemini 协议 parser.

@@ -28,8 +28,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/capture"
-	"github.com/prismai/llm-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/capture"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
 )
 
 // Spool 磁盘兜底队列.

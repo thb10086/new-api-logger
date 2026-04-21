@@ -17,11 +17,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/capture"
-	"github.com/prismai/llm-logger/gateway/internal/config"
-	"github.com/prismai/llm-logger/gateway/internal/handlers"
-	"github.com/prismai/llm-logger/gateway/internal/protocol"
-	"github.com/prismai/llm-logger/gateway/internal/proxy"
+	"github.com/thb10086/new-api-logger/gateway/internal/capture"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/handlers"
+	"github.com/thb10086/new-api-logger/gateway/internal/protocol"
+	"github.com/thb10086/new-api-logger/gateway/internal/proxy"
 )
 
 // Server 是 Gateway HTTP 服务实例.

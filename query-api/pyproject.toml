@@ -2,7 +2,7 @@
 name = "llm-logger-query-api"
 version = "0.1.0"
 description = "Query API service for LLM Logger - 访问 ClickHouse 元数据 + COS 原文 body"
-authors = [{ name = "PrismAI" }]
+authors = [{ name = "thb10086" }]
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [

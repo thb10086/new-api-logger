@@ -26,8 +26,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/prismai/llm-logger/gateway/internal/config"
-	"github.com/prismai/llm-logger/gateway/internal/pkg/compress"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/pkg/compress"
 )
 
 // COSSink 实现 capture.COSSink.

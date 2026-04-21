@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/capture"
-	"github.com/prismai/llm-logger/gateway/internal/config"
-	"github.com/prismai/llm-logger/gateway/internal/server"
-	"github.com/prismai/llm-logger/gateway/internal/sink"
+	"github.com/thb10086/new-api-logger/gateway/internal/capture"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/server"
+	"github.com/thb10086/new-api-logger/gateway/internal/sink"
 )
 
 func main() {

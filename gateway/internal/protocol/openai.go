@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/prismai/llm-logger/gateway/internal/sse"
+	"github.com/thb10086/new-api-logger/gateway/internal/sse"
 )
 
 // OpenAIChat 创建 OpenAI Chat 协议 parser.

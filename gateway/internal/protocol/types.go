@@ -9,7 +9,7 @@
 package protocol
 
 import (
-	"github.com/prismai/llm-logger/gateway/internal/sse"
+	"github.com/thb10086/new-api-logger/gateway/internal/sse"
 )
 
 // ParsedRequest 是请求体解析结果.

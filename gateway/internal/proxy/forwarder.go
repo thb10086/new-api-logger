@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prismai/llm-logger/gateway/internal/config"
+	"github.com/thb10086/new-api-logger/gateway/internal/config"
 )
 
 // Forwarder 转发请求到上游.

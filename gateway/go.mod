@@ -1,4 +1,4 @@
-module github.com/prismai/llm-logger/gateway
+module github.com/thb10086/new-api-logger/gateway
 
 go 1.22
 
