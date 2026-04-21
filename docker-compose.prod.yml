@@ -47,15 +47,28 @@ services:
   gateway:
     # 生产推荐调大并发
     environment:
-      LLMLOG_CAPTURE_WORKERS: "${LLMLOG_CAPTURE_WORKERS:-16}"
+      LLMLOG_CAPTURE_BUFFER: "${LLMLOG_CAPTURE_BUFFER:-20000}"
+      LLMLOG_CAPTURE_WORKERS: "${LLMLOG_CAPTURE_WORKERS:-8}"
       LLMLOG_CH_BATCH_SIZE: "${LLMLOG_CH_BATCH_SIZE:-500}"
       LLMLOG_CH_BATCH_INTERVAL: "${LLMLOG_CH_BATCH_INTERVAL:-300ms}"
+      LLMLOG_DISK_SPOOL_ENABLED: "${LLMLOG_DISK_SPOOL_ENABLED:-true}"
+      LLMLOG_DISK_SPOOL_MAX_BYTES: "${LLMLOG_DISK_SPOOL_MAX_BYTES:-10737418240}"
       LLMLOG_LOG_LEVEL: "${LLMLOG_LOG_LEVEL:-info}"
     ports: !override
       - "${GATEWAY_PORT:-28080}:8080"
       - "127.0.0.1:${GATEWAY_METRICS_PORT:-29090}:9090"
     logging: *default-logging
     deploy:
+      # --------------------------------------------------------------
+      # 水平扩容 (单机多副本 - Swarm/K8s 场景自动生效;
+      # 普通 docker compose 忽略 replicas, 需用 k8s 或 swarm)
+      # --------------------------------------------------------------
+      # replicas: ${GATEWAY_REPLICAS:-2}
+      # update_config:
+      #   parallelism: 1
+      #   order: start-first
+      # restart_policy:
+      #   condition: on-failure
       resources:
         limits:
           # fallback 兼容 2 CPU / 4GB 小型 VPS; 大机器请在 .env 覆盖

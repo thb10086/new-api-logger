@@ -152,6 +152,11 @@ services:
       LLMLOG_CAPTURE_WORKERS: "${LLMLOG_CAPTURE_WORKERS:-4}"
       LLMLOG_CH_BATCH_SIZE: "${LLMLOG_CH_BATCH_SIZE:-200}"
       LLMLOG_CH_BATCH_INTERVAL: "${LLMLOG_CH_BATCH_INTERVAL:-500ms}"
+      # 磁盘兜底队列 (CH 不可用时零数据丢失)
+      LLMLOG_DISK_SPOOL_ENABLED: "${LLMLOG_DISK_SPOOL_ENABLED:-true}"
+      LLMLOG_DISK_SPOOL_DIR: "/var/lib/llmlog/spool"
+      LLMLOG_DISK_SPOOL_MAX_BYTES: "${LLMLOG_DISK_SPOOL_MAX_BYTES:-10737418240}"
+      LLMLOG_DISK_SPOOL_INTERVAL: "${LLMLOG_DISK_SPOOL_INTERVAL:-30s}"
       LLMLOG_CH_HOST: clickhouse
       LLMLOG_CH_PORT: "8123"
       LLMLOG_CH_DATABASE: "${LLMLOG_CH_DATABASE:-llm_logger}"
@@ -165,6 +170,9 @@ services:
       LLMLOG_LOG_LEVEL: "${LLMLOG_LOG_LEVEL:-info}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # 磁盘兜底队列持久化 (CH 不可用时落盘, 服务重启后自动回放)
+      - gateway_spool:/var/lib/llmlog/spool
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -243,6 +251,7 @@ volumes:
   clickhouse_data:
   clickhouse_logs:
   minio_data:
+  gateway_spool:   # gateway 磁盘兜底队列
 
 networks:
   llmlog:
