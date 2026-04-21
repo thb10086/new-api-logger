@@ -55,7 +55,7 @@ services:
       LLMLOG_DISK_SPOOL_MAX_BYTES: "${LLMLOG_DISK_SPOOL_MAX_BYTES:-10737418240}"
       LLMLOG_LOG_LEVEL: "${LLMLOG_LOG_LEVEL:-info}"
     ports: !override
-      - "${GATEWAY_PORT:-3000}:8080"
+      - "${GATEWAY_PORT:-28080}:8080"
       - "127.0.0.1:${GATEWAY_METRICS_PORT:-29090}:9090"
     logging: *default-logging
     deploy:

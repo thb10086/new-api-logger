@@ -51,7 +51,7 @@ sed -i "s|^LLMLOG_API_TOKEN=.*|LLMLOG_API_TOKEN=$(openssl rand -hex 32)|" .env
 chmod 600 .env
 
 # 3. 配置 newapi 上游地址 (见 §3.3 三种模式)
-sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=http://host.docker.internal:3001|" .env
+sed -i "s|^LLMLOG_UPSTREAM_URL=.*|LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000|" .env
 
 # 4. 加载 .env 到 shell (compose v2.24+ 推荐)
 set -a; source .env; set +a
@@ -87,7 +87,7 @@ docker compose ps
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `LLMLOG_UPSTREAM_URL` | `http://host.docker.internal:3001` | newapi 上游地址, 见 §3.3 |
+| `LLMLOG_UPSTREAM_URL` | `http://host.docker.internal:3000` | newapi 上游地址, 见 §3.3 |
 | `LLMLOG_UPSTREAM_TIMEOUT` | `600s` | 上游请求超时 |
 | `LLMLOG_CH_DATABASE` | `llm_logger` | ClickHouse 数据库名 |
 | `LLMLOG_CH_USER` | `default` | ClickHouse 用户 |
@@ -107,11 +107,11 @@ docker compose ps
 
 ### 3.2 端口配置
 
-gateway 默认接管 newapi 原端口 (3000), 内部服务使用 28xxx / 29xxx 段:
+生产默认使用 **28xxx / 29xxx 段**, 避开常见服务端口:
 
 | 变量 | 默认 | 暴露 | 说明 |
 | --- | --- | --- | --- |
-| `GATEWAY_PORT` | `3000` | 公网 | 接管 newapi 原端口, 用户无感知 |
+| `GATEWAY_PORT` | `28080` | 公网 | Gateway 代理入口 (Caddy 反代此端口) |
 | `ADMIN_UI_PORT` | `28888` | 公网 | 管理面板 |
 | `CH_HTTP_PORT` | `28123` | `127.0.0.1` | ClickHouse HTTP |
 | `CH_TCP_PORT` | `29000` | `127.0.0.1` | ClickHouse Native TCP |
@@ -122,40 +122,25 @@ gateway 默认接管 newapi 原端口 (3000), 内部服务使用 28xxx / 29xxx �
 
 `docker-compose.prod.yml` 把非对外端口绑定到 `127.0.0.1`, 只有 `GATEWAY_PORT` / `ADMIN_UI_PORT` 开放到 `0.0.0.0`.
 
-### 3.3 核心架构: gateway 接管 newapi 端口
+### 3.3 newapi 上游连接三种模式
 
-gateway 透明接管 newapi 的原端口 (默认 3000), 所有请求 (前端页面 + API) 都经过 gateway.
-只有 4 个 LLM 路径被采集, 其他路径仅透传, 用户完全无感知.
+gateway 全量透传 newapi 的所有请求 (前端页面 + API + 静态资源), 只有 4 个 LLM 路径被采集.
+newapi 端口不变, gateway 使用独立端口, 通过 Caddy 反代后用户通过域名访问 gateway.
 
 ```text
-用户 -> http://IP:3000 -> gateway -> newapi:3001 (内部)
-                          |
-                          v (异步旁路, 不阻塞)
-                       ClickHouse
+用户 -> https://domain -> Caddy -> gateway:28080 -> newapi:3000
+                                      |
+                                      v (异步旁路)
+                                   ClickHouse
 ```
-
-**前提: newapi 需要改端口**
-
-newapi 需从 3000 改为 3001 (或其他端口), 把 3000 让给 gateway:
-
-```bash
-# Docker 方式: 修改 newapi 的 docker-compose.yml 端口映射
-ports:
-  - "3001:3000"   # 宿主机 3001 -> 容器内 3000
-
-# 或直接改 newapi 启动参数
-export PORT=3001
-```
-
-#### 三种上游连接模式
 
 **模式 A — 走宿主机 (默认推荐)**
 
 ```bash
-LLMLOG_UPSTREAM_URL=http://host.docker.internal:3001
+LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000
 ```
 
-- newapi 需改端口为 3001 (见下方 newapi 端口修改说明)
+- newapi 端口不变, gateway 通过宿主机网络连接
 - 依赖 compose 里已配置的 `extra_hosts: host.docker.internal:host-gateway`, Linux 下也可用
 - 流量多一跳, 单请求额外开销 < 1ms 可忽略
 
@@ -180,7 +165,7 @@ networks:
 `.env` 改:
 
 ```bash
-LLMLOG_UPSTREAM_URL=http://new-api:3001
+LLMLOG_UPSTREAM_URL=http://new-api:3000
 ```
 
 此时 newapi 可以关掉宿主端口映射, 只对内暴露, 安全性更高.
@@ -332,7 +317,7 @@ systemctl restart caddy
 
 ```text
 api.yourdomain.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:28080
 
     @streaming {
         path /v1/chat/completions
@@ -340,7 +325,7 @@ api.yourdomain.com {
         path /v1/messages
         path /v1beta/models/*
     }
-    reverse_proxy @streaming localhost:3000 {
+    reverse_proxy @streaming localhost:28080 {
         flush_interval -1
     }
 }
@@ -349,7 +334,7 @@ api.yourdomain.com {
 **流量路径**:
 
 ```text
-客户端 -> https://api.yourdomain.com:443 -> Caddy (TLS) -> gateway:3000 -> newapi:3001
+客户端 -> https://api.yourdomain.com:443 -> Caddy (TLS) -> gateway:28080 -> newapi:3000
 ```
 
 启用域名后, 防火墙只需放行 443, 可关闭 3000 的公网访问.
@@ -375,7 +360,7 @@ api.yourdomain.com {
 
 ```bash
 # ufw
-ufw allow 3000/tcp
+ufw allow 28080/tcp
 ufw allow 28888/tcp   # Admin UI
 
 # firewalld
@@ -384,7 +369,7 @@ firewall-cmd --permanent --add-port=28888/tcp   # Admin UI
 firewall-cmd --reload
 ```
 
-挂了 Caddy + TLS 后, 可以只放 443, 关闭 3000 的公网访问.
+挂了 Caddy + TLS 后, 可以只放 443, 关闭 28080 的公网访问.
 
 ### 6.4 切换到腾讯 COS / AWS S3
 

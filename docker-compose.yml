@@ -4,7 +4,7 @@
 # 默认行为: docker compose up -d 启动全部 5 个服务
 #   - clickhouse    (主存储, :8123 HTTP / :9000 TCP)
 #   - minio         (对象存储, :9100 S3 / :9001 Console)
-#   - gateway       (反向代理, :${GATEWAY_PORT:-3000}, 接管 newapi 原端口)
+#   - gateway       (透明代理, :${GATEWAY_PORT:-8080})
 #   - query-api     (查询 API, 仅内部)
 #   - admin-ui      (Web 面板, :${ADMIN_UI_PORT:-8888})
 #
@@ -119,19 +119,21 @@ services:
   # ============================================================
   # Gateway (Go) - 透明反向代理 + LLM 请求采集
   #
-  # 架构: gateway 接管 newapi 的原端口 (3000), 用户无感知.
-  # newapi 需改为其他内部端口 (如 3001), gateway 会透明转发所有请求.
-  # 前端页面、API 请求、静态资源全部透传, 只有4个LLM路径会被采集.
+  # 架构: 全量透传 newapi 的所有请求 (含前端页面、静态资源、API),
+  # 只有 4 个 LLM 路径会被采集到 ClickHouse, 其余仅透传.
+  # newapi 端口不变, gateway 使用独立端口.
+  #
+  # 域名场景: Caddy 反代 gateway 端口, 用户访问 https://domain 即可.
   #
   # newapi 上游连接的三种模式 (LLMLOG_UPSTREAM_URL):
-  #   1. [默认] newapi 改端口为 3001, 宿主机映射:
-  #      LLMLOG_UPSTREAM_URL=http://host.docker.internal:3001
+  #   1. [默认] newapi 独立容器, 宿主机端口映射:
+  #      LLMLOG_UPSTREAM_URL=http://host.docker.internal:3000
   #   2. newapi 在同一 docker network:
-  #      - 在 .env 中: LLMLOG_UPSTREAM_URL=http://<newapi-container>:3001
+  #      - 在 .env 中: LLMLOG_UPSTREAM_URL=http://<newapi-container>:3000
   #      - 并添加 newapi 的 network 到下面 networks 段
   #   3. gateway 共享宿主机网络 (极端场景):
   #      - 取消注释 `network_mode: host`
-  #      - LLMLOG_UPSTREAM_URL=http://localhost:3001
+  #      - LLMLOG_UPSTREAM_URL=http://localhost:3000
   # ============================================================
   gateway:
     build:
@@ -143,12 +145,12 @@ services:
     restart: unless-stopped
     # network_mode: host   # 方案3: 开启此行并注释下方 ports/networks
     ports:
-      - "${GATEWAY_PORT:-3000}:8080"          # 接管 newapi 原端口
+      - "${GATEWAY_PORT:-8080}:8080"          # 客户端/Caddy 连接此端口
       - "${GATEWAY_METRICS_PORT:-9090}:9090"  # Metrics
     environment:
       LLMLOG_LISTEN_ADDR: "0.0.0.0:8080"
       LLMLOG_METRICS_ADDR: "0.0.0.0:9090"
-      LLMLOG_UPSTREAM_URL: "${LLMLOG_UPSTREAM_URL:-http://host.docker.internal:3001}"
+      LLMLOG_UPSTREAM_URL: "${LLMLOG_UPSTREAM_URL:-http://host.docker.internal:3000}"
       LLMLOG_UPSTREAM_TIMEOUT: "${LLMLOG_UPSTREAM_TIMEOUT:-600s}"
       LLMLOG_MAX_BODY_BYTES: "${LLMLOG_MAX_BODY_BYTES:-104857600}"
       LLMLOG_COS_OFFLOAD_THRESHOLD: "${LLMLOG_COS_OFFLOAD_THRESHOLD:-32768}"

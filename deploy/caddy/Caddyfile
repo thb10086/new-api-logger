@@ -10,7 +10,7 @@
 #   4. 复制此文件到 /etc/caddy/Caddyfile
 #   5. systemctl restart caddy
 #
-# 前提: llm-logger gateway 已在 localhost:3000 运行
+# 前提: llm-logger gateway 已在 localhost:${GATEWAY_PORT} 运行 (默认 28080)
 # ============================================================
 
 # ============================================================
@@ -20,7 +20,7 @@
 # 浏览器管理页:    https://api.yourdomain.com (newapi 前端)
 # ============================================================
 api.yourdomain.com {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:28080
 
     # SSE 流式响应: 关闭 response buffering
     # Caddy 默认不缓冲, 此处显式声明以确保
@@ -30,7 +30,7 @@ api.yourdomain.com {
         path /v1/messages
         path /v1beta/models/*
     }
-    reverse_proxy @streaming localhost:3000 {
+    reverse_proxy @streaming localhost:28080 {
         flush_interval -1
     }
 }
