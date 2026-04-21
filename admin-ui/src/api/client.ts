@@ -247,13 +247,34 @@ export interface ListTracesParams {
   offset?: number
 }
 
+export interface ExportTracesParams {
+  format?: 'jsonl' | 'csv'
+  include_body?: boolean
+  provider?: string
+  client_type?: string
+  user_id?: string
+  api_key_prefix?: string
+  is_error?: boolean
+  start?: string
+  end?: string
+  max_rows?: number
+}
+
+/** 把任意对象转为 URLSearchParams, 跳过 undefined / null / 空字符串 */
+function toQuery(params: object): URLSearchParams {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null) continue
+    const s = String(v)
+    if (s === '') continue
+    q.set(k, s)
+  }
+  return q
+}
+
 export const api = {
   async listTraces(params: ListTracesParams = {}): Promise<TraceListResponse> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    return request<TraceListResponse>(`/api/v1/traces?${q.toString()}`)
+    return request<TraceListResponse>(`/api/v1/traces?${toQuery(params).toString()}`)
   },
 
   async getTrace(requestId: string, includeRaw = false): Promise<TraceDetail> {
@@ -269,11 +290,7 @@ export const api = {
     provider?: string
     model?: string
   }): Promise<UsageStatsResponse> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    return request<UsageStatsResponse>(`/api/v1/stats/usage?${q.toString()}`)
+    return request<UsageStatsResponse>(`/api/v1/stats/usage?${toQuery(params).toString()}`)
   },
 
   async health(windowHours = 1): Promise<HealthStatsResponse> {
@@ -288,11 +305,7 @@ export const api = {
     user_id?: string
     limit?: number
   }): Promise<{ items: SearchHit[]; total: number; query: string; field: string }> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    return request(`/api/v1/search?${q.toString()}`)
+    return request(`/api/v1/search?${toQuery(params).toString()}`)
   },
 
   async errors(params: {
@@ -304,11 +317,7 @@ export const api = {
     limit?: number
     offset?: number
   } = {}): Promise<ErrorListResponse> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    return request<ErrorListResponse>(`/api/v1/errors?${q.toString()}`)
+    return request<ErrorListResponse>(`/api/v1/errors?${toQuery(params).toString()}`)
   },
 
   async users(params: {
@@ -319,11 +328,7 @@ export const api = {
     limit?: number
     offset?: number
   } = {}): Promise<UserListResponse> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    return request<UserListResponse>(`/api/v1/users?${q.toString()}`)
+    return request<UserListResponse>(`/api/v1/users?${toQuery(params).toString()}`)
   },
 
   async userProfile(userId: string, days = 30): Promise<UserProfile> {
@@ -334,45 +339,20 @@ export const api = {
     userId: string,
     params: { limit?: number; offset?: number; days?: number } = {},
   ): Promise<TraceListResponse> {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
     return request<TraceListResponse>(
-      `/api/v1/users/${encodeURIComponent(userId)}/traces?${q.toString()}`,
+      `/api/v1/users/${encodeURIComponent(userId)}/traces?${toQuery(params).toString()}`,
     )
   },
 
-  /** 返回导出 URL (直接 window.open 触发下载), 由调用方拼接 token */
-  exportTracesUrl(params: {
-    format?: 'jsonl' | 'csv'
-    include_body?: boolean
-    provider?: string
-    client_type?: string
-    user_id?: string
-    api_key_prefix?: string
-    is_error?: boolean
-    start?: string
-    end?: string
-    max_rows?: number
-  } = {}): string {
-    const q = new URLSearchParams()
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
-    const token = getToken()
-    if (token) q.set('_token', token)
-    return `${API_BASE}/api/v1/export/traces?${q.toString()}`
+  /** 返回导出 URL (仅供展示/copy, 不包含 token; 实际下载用 downloadExport) */
+  exportTracesUrl(params: ExportTracesParams = {}): string {
+    return `${API_BASE}/api/v1/export/traces?${toQuery(params).toString()}`
   },
 
   /** 通过 fetch + blob 触发下载 (带 Authorization header, 不依赖 URL 里的 token) */
-  async downloadExport(params: Parameters<typeof api.exportTracesUrl>[0], filename?: string): Promise<void> {
-    const q = new URLSearchParams()
-    Object.entries(params || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== '' && v !== null) q.set(k, String(v))
-    })
+  async downloadExport(params: ExportTracesParams = {}, filename?: string): Promise<void> {
     const token = getToken()
-    const resp = await fetch(`${API_BASE}/api/v1/export/traces?${q.toString()}`, {
+    const resp = await fetch(`${API_BASE}/api/v1/export/traces?${toQuery(params).toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
     if (!resp.ok) throw new HTTPError(resp.status, `导出失败 HTTP ${resp.status}`)
@@ -380,7 +360,7 @@ export const api = {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = filename || `export-${Date.now()}.${params?.format ?? 'jsonl'}`
+    a.download = filename || `export-${Date.now()}.${params.format ?? 'jsonl'}`
     document.body.appendChild(a)
     a.click()
     a.remove()

@@ -6,7 +6,10 @@
 // 识别规则按顺序匹配, 先命中先返回.
 package handlers
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // ClientType 枚举值, 与 ClickHouse client_type 列值保持一致.
 const (
@@ -100,9 +103,18 @@ func ClassifyClient(ua string) (clientType, appVersion string) {
 	}
 }
 
+// truncateUA 按字节长度上限截断, 但保证不切断多字节 UTF-8 字符.
+// 常见客户端 UA 是 ASCII, 但部分带中文 / emoji 的浏览器 UA 需要安全处理,
+// 避免向 ClickHouse 插入无效 UTF-8 导致 LowCardinality 列序列化告警.
 func truncateUA(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	// 从 n 位置向前找到最近的 rune 起始位置
+	for i := n; i > 0; i-- {
+		if utf8.RuneStart(s[i]) {
+			return s[:i]
+		}
 	}
 	return s[:n]
 }

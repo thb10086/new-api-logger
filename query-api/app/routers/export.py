@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -110,7 +110,7 @@ async def export_traces(
         LIMIT %(_limit)s OFFSET %(_offset)s
     """
 
-    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     filename = f"traces-{ts}.{format}"
 
     if format == "jsonl":

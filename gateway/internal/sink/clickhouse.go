@@ -164,8 +164,18 @@ func (s *ClickHouseSink) sendWithRetry(ctx context.Context, batch []*capture.Rec
 			backoff := time.Duration(200*pow3(i)) * time.Millisecond
 			select {
 			case <-ctx.Done():
+				// ctx 取消 (通常是关闭阶段): 立即落盘 spool, 不再耗时重试
 				lastErr = ctx.Err()
-				break
+				if s.spool != nil {
+					if spoolErr := s.spool.Write(batch); spoolErr == nil {
+						s.spooledBatches.Add(1)
+						s.spooledRecords.Add(uint64(len(batch)))
+						return nil
+					}
+				}
+				s.failedBatches.Add(1)
+				s.failedRecords.Add(uint64(len(batch)))
+				return lastErr
 			case <-time.After(backoff):
 			}
 		}
