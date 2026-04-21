@@ -11,7 +11,7 @@ from app.database.cos import COSClient
 # 列表查询: 仅 summary 字段, 不含原文
 _SUMMARY_COLS = """
     request_id, created_at, provider, endpoint, model, is_stream,
-    user_id, api_key_prefix,
+    user_id, api_key_prefix, client_type, client_app_version,
     upstream_status, is_error, error_message,
     duration_ms, ttft_ms,
     prompt_tokens, completion_tokens, total_tokens,
@@ -20,7 +20,8 @@ _SUMMARY_COLS = """
 
 _DETAIL_COLS = """
     request_id, parent_request_id, created_at, completed_at,
-    client_ip, client_user_agent, api_key_hash, api_key_prefix,
+    client_ip, client_user_agent, client_type, client_app_version,
+    api_key_hash, api_key_prefix,
     user_id, organization_id,
     provider, endpoint, http_method, is_stream,
     model, model_normalized,
@@ -46,6 +47,8 @@ async def list_traces(
     model: str | None = None,
     user_id: str | None = None,
     api_key_hash: str | None = None,
+    api_key_prefix: str | None = None,
+    client_type: str | None = None,
     is_error: bool | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
@@ -74,6 +77,12 @@ async def list_traces(
     if api_key_hash:
         where.append("api_key_hash = %(api_key_hash)s")
         params["api_key_hash"] = api_key_hash
+    if api_key_prefix:
+        where.append("api_key_prefix = %(api_key_prefix)s")
+        params["api_key_prefix"] = api_key_prefix
+    if client_type:
+        where.append("client_type = %(client_type)s")
+        params["client_type"] = client_type
     if is_error is not None:
         where.append("is_error = %(is_error)s")
         params["is_error"] = 1 if is_error else 0

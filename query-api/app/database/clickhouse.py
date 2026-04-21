@@ -98,6 +98,43 @@ class ClickHouseClient:
             return v.item()
         return v
 
+    async def query_iter(
+        self,
+        sql_with_limit_offset: str,
+        parameters: dict[str, Any] | None = None,
+        *,
+        chunk_size: int = 5000,
+        max_rows: int = 10_000_000,
+    ):
+        """分块迭代查询 - yield 单行 dict.
+
+        适合导出场景, 不依赖 async stream API.
+        调用方提供的 sql 必须含 %(_limit)s + %(_offset)s 占位符,
+        本方法会反复调用直到返回空或达到 max_rows 上限.
+
+        示例:
+            sql = "SELECT ... FROM llm_call_logs WHERE ... LIMIT %(_limit)s OFFSET %(_offset)s"
+            async for row in ch.query_iter(sql, params):
+                yield row
+        """
+        params = dict(parameters or {})
+        offset = 0
+        fetched = 0
+        while fetched < max_rows:
+            params["_limit"] = min(chunk_size, max_rows - fetched)
+            params["_offset"] = offset
+            rows = await self.query(sql_with_limit_offset, params)
+            if not rows:
+                return
+            for r in rows:
+                yield r
+                fetched += 1
+                if fetched >= max_rows:
+                    return
+            if len(rows) < params["_limit"]:
+                return
+            offset += len(rows)
+
     async def ping(self) -> bool:
         try:
             await self._client.command("SELECT 1")

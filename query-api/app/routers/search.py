@@ -19,6 +19,8 @@ async def search(
     q: str = Query(..., min_length=2, description="检索关键词 (建议 >= 4 字符)"),
     field: str = Query(default="request", pattern="^(request|response)$"),
     provider: str | None = Query(default=None),
+    client_type: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
     start: datetime | None = Query(default=None),
     end: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -29,7 +31,9 @@ async def search(
 
     rows = await search_service.full_text_search(
         ch, query=q, field=field,
-        start=start, end=end, provider=provider, limit=limit,
+        start=start, end=end, provider=provider,
+        client_type=client_type, user_id=user_id,
+        limit=limit,
     )
     return SearchResponse(
         items=[SearchHit(**r) for r in rows],

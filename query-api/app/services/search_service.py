@@ -16,6 +16,8 @@ async def full_text_search(
     start: datetime | None = None,
     end: datetime | None = None,
     provider: str | None = None,
+    client_type: str | None = None,
+    user_id: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     """全文初筛 prompt/response. 走 CH ngrambf_v1 skip index 加速.
@@ -40,6 +42,12 @@ async def full_text_search(
     if provider:
         where.append("provider = %(provider)s")
         params["provider"] = provider
+    if client_type:
+        where.append("client_type = %(client_type)s")
+        params["client_type"] = client_type
+    if user_id:
+        where.append("user_id = %(user_id)s")
+        params["user_id"] = user_id
 
     where_clause = " WHERE " + " AND ".join(where)
 
@@ -50,6 +58,7 @@ async def full_text_search(
             provider,
             model,
             user_id,
+            client_type,
             substring({col}, 1, 500) AS snippet,
             is_error
         FROM {ch.table}
@@ -66,14 +75,15 @@ async def list_errors(
     start: datetime | None = None,
     end: datetime | None = None,
     provider: str | None = None,
+    client_type: str | None = None,
     upstream_status: int | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     """从 llm_errors_recent (近 30 天错误专表) 查询.
 
-    若专表不存在 (003 migration TTL bug 可能导致建表失败),
-    自动回退到从 llm_call_logs 主表的 is_error=1 记录查询.
+    若专表不存在 (003 migration TTL bug 可能导致建表失败), 或者需要
+    client_type 过滤 (专表不含该字段), 自动回退到主表 is_error=1 查询.
     """
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit, "offset": offset}
@@ -90,22 +100,30 @@ async def list_errors(
         where.append("upstream_status = %(upstream_status)s")
         params["upstream_status"] = upstream_status
 
-    # 尝试专表, 失败时回退主表
+    # 尝试专表, 但专表没有 client_type 字段; 需要按 client_type 筛选时走主表
     table = "llm_errors_recent"
-    try:
-        await ch.query_scalar(f"SELECT 1 FROM {table} LIMIT 0")
-    except Exception:
+    force_main = client_type is not None
+    if not force_main:
+        try:
+            await ch.query_scalar(f"SELECT 1 FROM {table} LIMIT 0")
+        except Exception:
+            force_main = True
+    if force_main:
         table = ch.table
-        if not where:
-            where.append("is_error = 1")
-        else:
+        if "is_error = 1" not in where:
             where.insert(0, "is_error = 1")
+        if client_type:
+            where.append("client_type = %(client_type)s")
+            params["client_type"] = client_type
 
     where_clause = " WHERE " + " AND ".join(where) if where else ""
 
+    # 主表带 client_type 输出, 专表不带 (前端默认空串)
+    client_type_col = "client_type" if force_main else "'' AS client_type"
     sql = f"""
         SELECT
             request_id, created_at, provider, model, user_id,
+            {client_type_col},
             upstream_status, error_type, error_message,
             duration_ms, request_text_preview
         FROM {table}

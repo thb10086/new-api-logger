@@ -19,6 +19,7 @@ async def list_errors(
     start: datetime | None = Query(default=None),
     end: datetime | None = Query(default=None),
     provider: str | None = Query(default=None),
+    client_type: str | None = Query(default=None),
     upstream_status: int | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -26,7 +27,7 @@ async def list_errors(
 ) -> ErrorListResponse:
     rows, total = await search_service.list_errors(
         ch,
-        start=start, end=end, provider=provider,
+        start=start, end=end, provider=provider, client_type=client_type,
         upstream_status=upstream_status, limit=limit, offset=offset,
     )
     return ErrorListResponse(

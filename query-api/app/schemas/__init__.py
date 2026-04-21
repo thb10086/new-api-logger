@@ -21,6 +21,8 @@ class TraceSummary(BaseModel):
     is_stream: bool
     user_id: str = ""
     api_key_prefix: str = ""
+    client_type: str = ""
+    client_app_version: str = ""
 
     upstream_status: int
     is_error: bool
@@ -133,6 +135,7 @@ class SearchHit(BaseModel):
     provider: str
     model: str
     user_id: str = ""
+    client_type: str = ""
     snippet: str
     is_error: bool
 
@@ -153,6 +156,7 @@ class ErrorRow(BaseModel):
     provider: str
     model: str
     user_id: str = ""
+    client_type: str = ""
     upstream_status: int
     error_type: str
     error_message: str
@@ -162,4 +166,35 @@ class ErrorRow(BaseModel):
 
 class ErrorListResponse(BaseModel):
     items: list[ErrorRow]
+    total: int
+
+
+# ============ User Profile ============
+
+
+class UserProfile(BaseModel):
+    """用户画像 (来自 llm_call_logs 近 30 天聚合)."""
+
+    user_id: str
+    client_type: str = ""
+    api_key_prefix: str = ""
+    user_agent: str = ""
+    total_requests: int
+    total_errors: int
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
+    request_bytes: int = 0
+    response_bytes: int = 0
+    models_used: list[str] = Field(default_factory=list)
+    providers_used: list[str] = Field(default_factory=list)
+    first_seen: datetime
+    last_seen: datetime
+    avg_duration_ms: float = 0
+
+
+class UserListResponse(BaseModel):
+    items: list[UserProfile]
     total: int

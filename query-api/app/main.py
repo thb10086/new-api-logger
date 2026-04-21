@@ -13,6 +13,7 @@ from app import __version__
 from app.config import get_settings
 from app.database.clickhouse import get_ch_client
 from app.routers import errors as errors_router
+from app.routers import export as export_router
 from app.routers import health as health_router
 from app.routers import search as search_router
 from app.routers import stats as stats_router
@@ -99,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router.router)
     app.include_router(search_router.router)
     app.include_router(errors_router.router)
+    app.include_router(export_router.router)
 
     return app
 
