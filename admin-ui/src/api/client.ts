@@ -48,7 +48,12 @@ class HTTPError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+interface RequestOptions extends RequestInit {
+  /** 跳过 401 自动 reload (用于 TokenGate 验证场景) */
+  _noReloadOn401?: boolean
+}
+
+async function request<T>(path: string, init?: RequestOptions): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -57,9 +62,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (token) headers.Authorization = `Bearer ${token}`
 
   const url = API_BASE + path
-  const resp = await fetch(url, { ...init, headers })
+  const { _noReloadOn401, ...fetchInit } = init || {}
+  const resp = await fetch(url, { ...fetchInit, headers })
   if (resp.status === 401 || resp.status === 403) {
     clearToken()
+    if (!_noReloadOn401) {
+      // 强制回到 TokenGate 登录页 (App.tsx 的 authed state 不会自动更新)
+      window.location.reload()
+    }
     throw new HTTPError(resp.status, '鉴权失败,请重新输入 Token')
   }
   if (!resp.ok) {
@@ -369,6 +379,11 @@ export const api = {
 
   async ping(): Promise<{ status: string; clickhouse?: boolean }> {
     return request('/readyz')
+  },
+
+  /** TokenGate 专用: 验证 token 是否有效, 401 不触发 reload */
+  async verifyToken(): Promise<{ status: string; clickhouse?: boolean }> {
+    return request('/readyz', { _noReloadOn401: true })
   },
 }
 

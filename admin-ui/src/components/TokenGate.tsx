@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
-import { KeyRound } from 'lucide-react'
-import { setToken } from '@/api/client'
+import { KeyRound, Loader2 } from 'lucide-react'
+import { setToken, clearToken, api } from '@/api/client'
 
 interface Props {
   onAuthed: () => void
@@ -9,15 +9,27 @@ interface Props {
 export default function TokenGate({ onAuthed }: Props) {
   const [token, setTokenInput] = useState('')
   const [error, setError] = useState<string>('')
+  const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!token.trim()) {
       setError('请输入 Token')
       return
     }
+    setLoading(true)
+    setError('')
+    // 先保存 token, 再通过 ping 验证是否有效
     setToken(token.trim())
-    onAuthed()
+    try {
+      await api.verifyToken()
+      onAuthed()
+    } catch {
+      clearToken()
+      setError('Token 无效或服务不可用, 请检查后重试')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -55,9 +67,11 @@ export default function TokenGate({ onAuthed }: Props) {
 
           <button
             type="submit"
-            className="w-full py-2.5 bg-brand-500 text-white font-medium rounded-lg hover:bg-brand-600 transition-colors"
+            disabled={loading}
+            className="w-full py-2.5 bg-brand-500 text-white font-medium rounded-lg hover:bg-brand-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            进入控制台
+            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {loading ? '验证中...' : '进入控制台'}
           </button>
         </form>
       </div>
