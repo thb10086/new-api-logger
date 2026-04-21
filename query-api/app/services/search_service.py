@@ -82,8 +82,9 @@ async def list_errors(
 ) -> tuple[list[dict[str, Any]], int]:
     """从 llm_errors_recent (近 30 天错误专表) 查询.
 
-    若专表不存在 (003 migration TTL bug 可能导致建表失败), 或者需要
-    client_type 过滤 (专表不含该字段), 自动回退到主表 is_error=1 查询.
+    两种场景会自动回退到主表 is_error=1 全表查询:
+      1. 专表不存在 (例如首次启动 schema 初始化被跳过).
+      2. 调用方传入 client_type 过滤 (专表不包含该字段).
     """
     where: list[str] = []
     params: dict[str, Any] = {"limit": limit, "offset": offset}

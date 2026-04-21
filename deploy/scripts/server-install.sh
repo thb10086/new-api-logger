@@ -163,11 +163,15 @@ for i in $(seq 1 30); do
 done
 
 # -------- 7. Bootstrap --------
-log "应用 ClickHouse migrations..."
+# ClickHouse 官方镜像会在**数据目录为空**时自动执行挂载的
+# /docker-entrypoint-initdb.d/*.sql (即 migrations/clickhouse/*.sql),
+# 这一步显式再跑一遍是为了支持"基于已有卷重新 clone 仓库"场景.
+# 所有 DDL 都是 CREATE ... IF NOT EXISTS, 重复执行无副作用.
+log "初始化 ClickHouse schema (幂等)..."
 for f in migrations/clickhouse/*.sql; do
   log "  执行 $f"
   docker compose exec -T clickhouse clickhouse-client --multiquery < "$f" || \
-    warn "migration $f 可能已应用过 (忽略错误)"
+    warn "  $f 执行时出现警告 (通常是对象已存在, 可忽略)"
 done
 
 log "初始化 MinIO buckets..."
