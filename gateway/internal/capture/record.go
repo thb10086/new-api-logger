@@ -29,12 +29,14 @@ type Record struct {
 	CompletedAt     *string `json:"completed_at,omitempty"`
 
 	// ============ 客户端 ============
-	ClientIP        string `json:"client_ip"`
-	ClientUserAgent string `json:"client_user_agent"`
-	APIKeyHash      string `json:"api_key_hash"`
-	APIKeyPrefix    string `json:"api_key_prefix"`
-	UserID          string `json:"user_id"`
-	OrganizationID  string `json:"organization_id"`
+	ClientIP         string `json:"client_ip"`
+	ClientUserAgent  string `json:"client_user_agent"`
+	ClientType       string `json:"client_type"`        // claude_code | openai_sdk | anthropic_sdk | cherry_studio | browser | unknown
+	ClientAppVersion string `json:"client_app_version"` // 如 "claude-cli/0.2.17"
+	APIKeyHash       string `json:"api_key_hash"`
+	APIKeyPrefix     string `json:"api_key_prefix"`
+	UserID           string `json:"user_id"`
+	OrganizationID   string `json:"organization_id"`
 
 	// ============ 协议 ============
 	Provider    string `json:"provider"`

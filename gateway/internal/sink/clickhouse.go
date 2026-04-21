@@ -35,6 +35,9 @@ type ClickHouseSink struct {
 	logger    *slog.Logger
 	insertURL string
 
+	// spool: 可选磁盘兜底, CH 最终失败时落本地 NDJSON
+	spool *Spool
+
 	mu     sync.Mutex
 	buffer []*capture.Record
 
@@ -46,6 +49,8 @@ type ClickHouseSink struct {
 	flushedRecords atomic.Uint64
 	failedBatches  atomic.Uint64
 	failedRecords  atomic.Uint64
+	spooledBatches atomic.Uint64
+	spooledRecords atomic.Uint64
 }
 
 // NewClickHouseSink 创建 sink 并启动后台 flush 协程.
@@ -177,12 +182,27 @@ func (s *ClickHouseSink) sendWithRetry(ctx context.Context, batch []*capture.Rec
 			"size", len(batch), "err", err)
 	}
 
+	// 重试耗尽, 尝试落盘兜底
+	if s.spool != nil {
+		if spoolErr := s.spool.Write(batch); spoolErr == nil {
+			s.spooledBatches.Add(1)
+			s.spooledRecords.Add(uint64(len(batch)))
+			s.logger.Warn("CH 写入失败, 已落盘等待回放",
+				"size", len(batch), "err", lastErr)
+			return nil
+		}
+	}
+
 	s.failedBatches.Add(1)
 	s.failedRecords.Add(uint64(len(batch)))
-	s.logger.Error("CH 批量写入最终失败,数据已丢弃",
+	s.logger.Error("CH 批量写入最终失败, 数据已丢弃",
 		"size", len(batch), "err", lastErr)
-	// TODO: 可选 - 落本地 NDJSON 文件做兜底, 由 ops 工具回放
 	return lastErr
+}
+
+// SetSpool 注入磁盘兜底队列 (可选, 主程序按需调用).
+func (s *ClickHouseSink) SetSpool(sp *Spool) {
+	s.spool = sp
 }
 
 func (s *ClickHouseSink) send(ctx context.Context, batch []*capture.Record) error {
@@ -200,8 +220,13 @@ func (s *ClickHouseSink) send(ctx context.Context, batch []*capture.Record) erro
 	if buf.Len() == 0 {
 		return nil
 	}
+	return s.sendRaw(ctx, &buf)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.insertURL, &buf)
+// sendRaw 直接把已经是 NDJSON 格式的 body POST 到 CH.
+// 用于: 1) send() 内部构造好 body 后调用; 2) spool replayer 回放.
+func (s *ClickHouseSink) sendRaw(ctx context.Context, body io.Reader) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.insertURL, body)
 	if err != nil {
 		return fmt.Errorf("构造请求失败: %w", err)
 	}
@@ -217,11 +242,9 @@ func (s *ClickHouseSink) send(ctx context.Context, batch []*capture.Record) erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("CH HTTP %d: %s", resp.StatusCode, string(body))
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("CH HTTP %d: %s", resp.StatusCode, string(msg))
 	}
-
-	// 读完 body, 让连接复用
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }

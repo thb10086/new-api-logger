@@ -38,6 +38,14 @@ type Config struct {
 	CHBatchInterval  time.Duration `envconfig:"CH_BATCH_INTERVAL" default:"500ms"`
 	COSUploadWorkers int           `envconfig:"COS_UPLOAD_WORKERS" default:"8"`
 
+	// ============ 磁盘兜底队列 (CH 连续失败时启用, 保证零数据丢失) ============
+	// DiskSpoolEnabled=true 时, CH 批量写入彻底失败的 batch 会落到本地 NDJSON 文件,
+	// 后台 replayer 定期扫描 spool 目录, 尝试重新 INSERT. 成功后删除文件.
+	DiskSpoolEnabled  bool          `envconfig:"DISK_SPOOL_ENABLED" default:"true"`
+	DiskSpoolDir      string        `envconfig:"DISK_SPOOL_DIR" default:"/var/lib/llmlog/spool"`
+	DiskSpoolMaxBytes int64         `envconfig:"DISK_SPOOL_MAX_BYTES" default:"10737418240"` // 10 GB
+	DiskSpoolInterval time.Duration `envconfig:"DISK_SPOOL_INTERVAL" default:"30s"`          // 重放扫描周期
+
 	// ============ ClickHouse ============
 	CHHost     string `envconfig:"CH_HOST" default:"localhost"`
 	CHPort     int    `envconfig:"CH_PORT" default:"8123"`

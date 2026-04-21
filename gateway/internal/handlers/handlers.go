@@ -59,13 +59,17 @@ func (h *Handler) WithModelFromPath(pathValueName string) *Handler {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ============ 1. 创建 record ============
 	requestID := id.New()
+	ua := truncateString(r.UserAgent(), 256)
+	clientType, clientAppVersion := ClassifyClient(ua)
 	rec := &capture.Record{
-		RequestID:       requestID,
-		Provider:        h.parser.Provider(),
-		Endpoint:        r.URL.Path,
-		HTTPMethod:      r.Method,
-		ClientIP:        proxy.ClientIP(r),
-		ClientUserAgent: truncateString(r.UserAgent(), 256),
+		RequestID:        requestID,
+		Provider:         h.parser.Provider(),
+		Endpoint:         r.URL.Path,
+		HTTPMethod:       r.Method,
+		ClientIP:         proxy.ClientIP(r),
+		ClientUserAgent:  ua,
+		ClientType:       clientType,
+		ClientAppVersion: clientAppVersion,
 	}
 	rec.SetCreatedAt(time.Now())
 

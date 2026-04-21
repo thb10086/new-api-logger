@@ -55,6 +55,16 @@ func main() {
 		os.Exit(3)
 	}
 
+	// ============ Disk Spool (可选兜底) ============
+	spool, err := sink.NewSpool(cfg, logger)
+	if err != nil {
+		logger.Error("Spool 初始化失败 (降级到无兜底模式)", "err", err)
+	} else if spool != nil {
+		chSink.SetSpool(spool)
+		spool.AttachClickHouse(chSink)
+		spool.Start(rootCtx)
+	}
+
 	// ============ Capture Pipeline ============
 	pipeline := capture.NewPipeline(cfg, chSink, cosSink, logger)
 	pipeline.Start(rootCtx)
@@ -101,6 +111,10 @@ func main() {
 
 	if err := pipeline.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Capture pipeline 关闭异常", "err", err)
+	}
+
+	if spool != nil {
+		spool.Shutdown()
 	}
 
 	logger.Info("Gateway 已退出")
