@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/thb10086/new-api-logger/main/deploy
 脚本自动:
 
 1. 检测并安装 Docker / Docker Compose.
-2. Clone 仓库到 `/opt/llm-logger`.
+2. Clone 仓库到 `/opt/new-api-logger`.
 3. 从 `.env.prod.example` 生成 `.env`, 用 `openssl rand` 填充所有密码.
 4. `docker compose -f docker-compose.yml -f docker-compose.prod.yml build` + `up -d`.
 5. ClickHouse schema + MinIO bucket 自动初始化.
@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/thb10086/new-api-logger/main/deploy
 
 ```bash
 # 1. Clone
-git clone https://github.com/thb10086/new-api-logger.git /opt/llm-logger
+git clone https://github.com/thb10086/new-api-logger.git /opt/new-api-logger
 cd /opt/new-api-logger
 
 # 2. 生成生产 .env
