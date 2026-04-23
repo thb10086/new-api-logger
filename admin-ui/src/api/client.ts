@@ -382,8 +382,8 @@ export const api = {
   },
 
   /** TokenGate 专用: 验证 token 是否有效, 401 不触发 reload */
-  async verifyToken(): Promise<{ status: string; clickhouse?: boolean }> {
-    return request('/readyz', { _noReloadOn401: true })
+  async verifyToken(): Promise<{ status: string }> {
+    return request('/api/v1/auth/verify', { _noReloadOn401: true })
   },
 }
 
